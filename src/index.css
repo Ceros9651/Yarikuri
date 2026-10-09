@@ -1,0 +1,412 @@
+:root {
+  --bg: #f4f6f5;
+  --surface: #ffffff;
+  --surface-2: #eef2f0;
+  --text: #1c2421;
+  --text-muted: #5f6b66;
+  --border: #dbe2de;
+  --primary: #15803d;
+  --primary-contrast: #ffffff;
+  --income: #15803d;
+  --expense: #c2410c;
+  --danger: #b91c1c;
+  --bar: #22c55e;
+  --radius: 12px;
+  --tab-height: 60px;
+
+  color-scheme: light;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Hiragino Sans',
+    'Noto Sans JP',
+    sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1412;
+    --surface: #18201c;
+    --surface-2: #212b26;
+    --text: #e6ece9;
+    --text-muted: #9aa8a1;
+    --border: #2c3832;
+    --primary: #22c55e;
+    --primary-contrast: #06210f;
+    --income: #4ade80;
+    --expense: #fb923c;
+    --danger: #f87171;
+    --bar: #16a34a;
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  overflow-x: hidden;
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0 0 12px;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* iOS がフォーカス時にズームしないよう 16px 以上にする */
+input,
+select,
+textarea {
+  font-size: 16px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--surface);
+}
+
+button.primary {
+  background: var(--primary);
+  color: var(--primary-contrast);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+button.danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
+}
+
+button.link {
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  color: var(--primary);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+}
+
+.content {
+  padding: calc(16px + env(safe-area-inset-top)) 16px
+    calc(var(--tab-height) + 24px + env(safe-area-inset-bottom));
+}
+
+/* 下部タブバー */
+.tab-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
+}
+
+.tab {
+  flex: 1;
+  max-width: 120px;
+  height: var(--tab-height);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.tab-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.tab.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* カード・リスト */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.list > li:last-child {
+  border-bottom: none;
+}
+
+.row-total {
+  font-weight: 700;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.income {
+  color: var(--income);
+}
+
+.expense {
+  color: var(--expense);
+}
+
+.empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 16px 0;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 月の切り替え */
+.month-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.month-switcher h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.month-switcher button {
+  width: 44px;
+  height: 44px;
+  font-size: 1.4rem;
+  padding: 0;
+  border-radius: 50%;
+}
+
+/* ホームの収支 */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.summary-grid .card {
+  margin: 0;
+  padding: 10px;
+  text-align: center;
+}
+
+.summary-grid .amount {
+  display: block;
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: normal;
+  word-break: break-all;
+}
+
+/* カテゴリ別の横棒 */
+.list > li.bar-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  padding: 8px 0;
+}
+
+.bar-track {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--bar);
+}
+
+/* フォーム */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.segmented button {
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--surface);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 15%);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.field > span {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.form-actions .primary {
+  flex: 1;
+  padding: 12px;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.inline-form > * {
+  flex: 1 1 140px;
+}
+
+.inline-form > button {
+  flex: 0 0 auto;
+}
+
+/* 取引一覧の行 */
+.tx-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 2px 10px;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 0;
+}
+
+.tx-date {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.tx-sub {
+  grid-column: 2 / -1;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  margin-bottom: 12px;
+}
+
+.notice.error {
+  color: var(--danger);
+}
+
+h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+
+.row-actions {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

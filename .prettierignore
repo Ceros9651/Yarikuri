@@ -1,0 +1,6 @@
+dist
+dev-dist
+coverage
+openspec
+.claude
+package-lock.json
