@@ -3,7 +3,7 @@ import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { formatYen } from '../domain/format';
 import { TRANSACTION_TYPE_LABELS, type Transaction } from '../domain/types';
-import { useAccounts, useCategories, useTransactions } from '../hooks/useData';
+import { useAllData } from '../hooks/useData';
 
 function signedAmount(tx: Transaction): { text: string; className: string } {
   switch (tx.type) {
@@ -21,9 +21,10 @@ function signedAmount(tx: Transaction): { text: string; className: string } {
 export function TransactionsPage() {
   const { month } = useMonth();
   const navigate = useNavigate();
-  const accounts = useAccounts();
-  const categories = useCategories();
-  const transactions = useTransactions();
+  const data = useAllData();
+  const accounts = data?.accounts ?? [];
+  const categories = data?.categories ?? [];
+  const transactions = data?.transactions;
 
   const accountName = (id?: string) => accounts.find((a) => a.id === id)?.name ?? '';
   const categoryName = (id?: string) => categories.find((c) => c.id === id)?.name ?? '未分類';

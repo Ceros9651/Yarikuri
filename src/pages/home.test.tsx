@@ -82,7 +82,7 @@ describe('口座別残高', () => {
     await save({ amount: '5000', accountId: cardA, categoryId: cat('食費') });
 
     await renderHome();
-    const section = screen.getByRole('region', { name: '残高（月末時点）' });
+    const section = await screen.findByRole('region', { name: '残高（月末時点）' });
     await waitFor(() => expect(screen.getByTestId('balance-total')).toHaveTextContent('¥102,000'));
     const rows = within(section)
       .getAllByRole('listitem')
@@ -109,7 +109,7 @@ describe('口座別残高', () => {
     });
 
     const { user } = await renderHome();
-    const section = screen.getByRole('region', { name: '残高（月末時点）' });
+    const section = await screen.findByRole('region', { name: '残高（月末時点）' });
     await waitFor(() =>
       expect(within(section).getAllByRole('listitem')[0]).toHaveTextContent('¥6,000'),
     );
@@ -121,7 +121,7 @@ describe('口座別残高', () => {
     const { suica } = await setup();
     await setAccountHidden(suica, true);
     await renderHome();
-    const section = screen.getByRole('region', { name: '残高（月末時点）' });
+    const section = await screen.findByRole('region', { name: '残高（月末時点）' });
     await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(3));
     expect(section).not.toHaveTextContent('Suica');
   });
@@ -134,7 +134,7 @@ describe('カテゴリ別内訳とカード別利用額', () => {
     await save({ amount: '30000', categoryId: cat('食費') });
 
     await renderHome();
-    const section = screen.getByRole('region', { name: 'カテゴリ別の出費' });
+    const section = await screen.findByRole('region', { name: 'カテゴリ別の出費' });
     await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
     const rows = within(section)
       .getAllByRole('listitem')
@@ -149,7 +149,7 @@ describe('カテゴリ別内訳とカード別利用額', () => {
     await setAccountHidden(cardA, true);
 
     await renderHome();
-    const section = screen.getByRole('region', { name: 'カード別の利用額' });
+    const section = await screen.findByRole('region', { name: 'カード別の利用額' });
     await waitFor(() => expect(screen.getByTestId('card-total')).toHaveTextContent('¥15,000'));
     const rows = within(section)
       .getAllByRole('listitem')

@@ -22,3 +22,26 @@ export function useTransactions(): Transaction[] | undefined {
 export function useLastExportedAt(): string | undefined {
   return useLiveQuery(async () => (await db.meta.get('lastExportedAt'))?.value, []);
 }
+
+export interface AllData {
+  accounts: Account[];
+  categories: Category[];
+  transactions: Transaction[];
+}
+
+/**
+ * 口座・カテゴリ・取引を1回の読み込みでまとめて返す。読み込み中は undefined。
+ * 別々に読むと、取引だけ先に届いて口座名やカテゴリ名が空の一瞬が描画されるため、
+ * 名前を表示しながら集計する画面ではこちらを使う。
+ */
+export function useAllData(): AllData | undefined {
+  return useLiveQuery(
+    () =>
+      db.transaction('r', db.accounts, db.categories, db.transactions, async () => ({
+        accounts: await db.accounts.orderBy('sortOrder').toArray(),
+        categories: await db.categories.orderBy('sortOrder').toArray(),
+        transactions: await db.transactions.toArray(),
+      })),
+    [],
+  );
+}

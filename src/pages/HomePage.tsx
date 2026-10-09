@@ -6,13 +6,20 @@ import { lastDayOfMonth } from '../domain/date';
 import { formatYen } from '../domain/format';
 import { summarizeMonth } from '../domain/summary';
 import { isAssetAccount } from '../domain/types';
-import { useAccounts, useCategories, useTransactions } from '../hooks/useData';
+import { useAllData } from '../hooks/useData';
 
 export function HomePage() {
   const { month } = useMonth();
-  const accounts = useAccounts();
-  const categories = useCategories();
-  const transactions = useTransactions() ?? [];
+  const data = useAllData();
+  if (!data) {
+    return (
+      <>
+        <h1>ホーム</h1>
+        <MonthSwitcher />
+      </>
+    );
+  }
+  const { accounts, categories, transactions } = data;
 
   const summary = summarizeMonth(month, transactions, accounts, categories);
   const assetAccounts = accounts.filter((a) => isAssetAccount(a) && !a.hidden);
