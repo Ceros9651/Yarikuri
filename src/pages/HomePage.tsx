@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { computeBalances } from '../domain/balance';
+import { BUDGET_STATUS_LABELS, summarizeBudgets } from '../domain/budget';
 import { lastDayOfMonth } from '../domain/date';
 import { formatYen } from '../domain/format';
 import { summarizeMonth } from '../domain/summary';
@@ -19,9 +20,11 @@ export function HomePage() {
       </>
     );
   }
-  const { accounts, categories, transactions } = data;
+  const { accounts, categories, transactions, budgets } = data;
 
   const summary = summarizeMonth(month, transactions, accounts, categories);
+  const budgetUsages = summarizeBudgets(month, transactions, accounts, categories, budgets);
+  const overBudget = budgetUsages.filter((b) => b.status === 'over');
   const assetAccounts = accounts.filter((a) => isAssetAccount(a) && !a.hidden);
   const balances = computeBalances(assetAccounts, transactions, lastDayOfMonth(month));
   const totalBalance = [...balances.values()].reduce((sum, b) => sum + b, 0);
@@ -30,6 +33,12 @@ export function HomePage() {
     <>
       <h1>ホーム</h1>
       <MonthSwitcher />
+
+      {overBudget.length > 0 && (
+        <p className="notice budget-alert" role="alert" data-testid="over-budget">
+          予算超過：{overBudget.map((b) => b.name).join('、')}
+        </p>
+      )}
 
       <section className="summary-grid" aria-label="月の収支">
         <div className="card">
@@ -84,6 +93,48 @@ export function HomePage() {
                 </span>
                 <span className="bar-track" aria-hidden="true">
                   <span className="bar-fill" style={{ width: `${c.percent}%`, display: 'block' }} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card" aria-labelledby="budgets-heading">
+        <h2 id="budgets-heading">予算</h2>
+        {budgetUsages.length === 0 ? (
+          <p className="empty">
+            この月の予算はありません。<Link to="/settings">設定</Link>
+            でカテゴリごとに予算を決められます
+          </p>
+        ) : (
+          <ul className="list">
+            {budgetUsages.map((b) => (
+              <li
+                key={b.categoryId}
+                className={`bar-row budget-${b.status}`}
+                data-testid={`budget-${b.name}`}
+              >
+                <span className="budget-head">
+                  <span className="truncate">{b.name}</span>
+                  {b.status !== 'normal' && (
+                    <span className="budget-badge">{BUDGET_STATUS_LABELS[b.status]}</span>
+                  )}
+                </span>
+                <span className="amount">
+                  {formatYen(b.spent)} / {formatYen(b.budget)}
+                </span>
+                <span className="budget-sub amount">
+                  {b.remaining >= 0
+                    ? `残り ${formatYen(b.remaining)}`
+                    : `${formatYen(-b.remaining)} 超過`}
+                  ・{b.percent}%
+                </span>
+                <span className="bar-track" aria-hidden="true">
+                  <span
+                    className="bar-fill"
+                    style={{ width: `${Math.min(b.percent, 100)}%`, display: 'block' }}
+                  />
                 </span>
               </li>
             ))}

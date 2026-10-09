@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { computeBalance } from '../domain/balance';
 import type { TransactionDraft } from '../domain/validation';
@@ -32,10 +33,42 @@ describe('スキーマ', () => {
     expect(db.isOpen()).toBe(true);
     expect(db.tables.map((t) => t.name).sort()).toEqual([
       'accounts',
+      'budgets',
       'categories',
       'meta',
       'transactions',
     ]);
+  });
+
+  it('version 1 の DB を開き直すと既存データが残り、空の budgets が使える', async () => {
+    const name = `test-upgrade-${++n}`;
+    const old = new Dexie(name);
+    old.version(1).stores({
+      accounts: 'id, type, sortOrder',
+      categories: 'id, kind, sortOrder',
+      transactions: 'id, date, accountId, toAccountId, categoryId',
+      meta: 'key',
+    });
+    await old.table('categories').add({
+      id: 'c1',
+      kind: 'expense',
+      name: '食費',
+      hidden: false,
+      sortOrder: 0,
+    });
+    old.close();
+
+    const upgraded = new YarikuriDB(name);
+    try {
+      expect(await upgraded.categories.get('c1')).toMatchObject({ name: '食費' });
+      expect(await upgraded.budgets.count()).toBe(0);
+      await repo.setBudget('c1', '2026-10', '40000', upgraded);
+      expect(await upgraded.budgets.toArray()).toEqual([
+        { categoryId: 'c1', month: '2026-10', amount: 40_000 },
+      ]);
+    } finally {
+      await upgraded.delete();
+    }
   });
 });
 
@@ -120,6 +153,46 @@ describe('カテゴリ', () => {
   it('自分自身と同じ名前への変更は重複扱いしない', async () => {
     const id = await repo.addCategory({ kind: 'expense', name: '食費' }, db);
     await expect(repo.renameCategory(id, '食費', db)).resolves.toBeUndefined();
+  });
+});
+
+describe('予算', () => {
+  it('予算を設定し、同じ月は上書きする', async () => {
+    const food = await repo.addCategory({ kind: 'expense', name: '食費' }, db);
+    await repo.setBudget(food, '2026-10', '40,000', db);
+    await repo.setBudget(food, '2026-10', '45000', db);
+    await repo.setBudget(food, '2026-12', '50000', db);
+    expect(await db.budgets.orderBy('[categoryId+month]').toArray()).toEqual([
+      { categoryId: food, month: '2026-10', amount: 45_000 },
+      { categoryId: food, month: '2026-12', amount: 50_000 },
+    ]);
+  });
+
+  it.each(['0', '-100', 'abc', '', '1000000000'])('不正な予算額 "%s" は保存できない', async (v) => {
+    const food = await repo.addCategory({ kind: 'expense', name: '食費' }, db);
+    await expect(repo.setBudget(food, '2026-10', v, db)).rejects.toThrow(
+      '予算は1〜999,999,999円の整数で入力してください',
+    );
+    expect(await db.budgets.count()).toBe(0);
+  });
+
+  it('予算を解除すると null の記録が残る', async () => {
+    const eatOut = await repo.addCategory({ kind: 'expense', name: '外食' }, db);
+    await repo.setBudget(eatOut, '2026-10', '10000', db);
+    await repo.clearBudget(eatOut, '2026-10', db);
+    expect(await db.budgets.toArray()).toEqual([
+      { categoryId: eatOut, month: '2026-10', amount: null },
+    ]);
+  });
+
+  it('収入カテゴリには設定できない', async () => {
+    const salary = await repo.addCategory({ kind: 'income', name: '給与' }, db);
+    await expect(repo.setBudget(salary, '2026-10', '1000', db)).rejects.toBeInstanceOf(
+      repo.ValidationError,
+    );
+    await expect(repo.clearBudget(salary, '2026-10', db)).rejects.toBeInstanceOf(
+      repo.ValidationError,
+    );
   });
 });
 

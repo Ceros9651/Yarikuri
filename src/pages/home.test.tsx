@@ -1,6 +1,12 @@
 import { within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addAccount, saveTransaction, setAccountHidden } from '../db/repository';
+import {
+  addAccount,
+  saveTransaction,
+  setAccountHidden,
+  setBudget,
+  setCategoryHidden,
+} from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import type { TransactionDraft } from '../domain/validation';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -155,5 +161,81 @@ describe('カテゴリ別内訳とカード別利用額', () => {
       .getAllByRole('listitem')
       .map((li) => li.textContent);
     expect(rows).toEqual(['Aカード¥12,000', 'Bカード¥3,000', '合計¥15,000']);
+  });
+});
+
+describe('予算', () => {
+  const budgetsSection = () => screen.getByRole('region', { name: '予算' });
+
+  it('予算のあるカテゴリの消化状況を、出費 0 円でも表示する', async () => {
+    const { cat, save } = await setup();
+    await setBudget(cat('食費'), '2026-10', '40000');
+    await setBudget(cat('外食'), '2026-10', '10000');
+    await save({ amount: '30000', categoryId: cat('食費') });
+
+    await renderHome();
+    await waitFor(() => expect(screen.getByTestId('budget-食費')).toBeInTheDocument());
+    expect(screen.getByTestId('budget-食費')).toHaveTextContent(
+      '食費¥30,000 / ¥40,000残り ¥10,000・75%',
+    );
+    expect(screen.getByTestId('budget-外食')).toHaveTextContent('外食¥0 / ¥10,000残り ¥10,000・0%');
+    expect(screen.getByTestId('budget-食費')).not.toHaveTextContent('注意');
+  });
+
+  it('注意と超過を文言付きで区別して表示する', async () => {
+    const { cat, save } = await setup();
+    await setBudget(cat('食費'), '2026-10', '40000');
+    await setBudget(cat('外食'), '2026-10', '10000');
+    await save({ amount: '32000', categoryId: cat('食費') });
+    await save({ amount: '12500', categoryId: cat('外食') });
+
+    await renderHome();
+    const over = await screen.findByTestId('budget-外食');
+    await waitFor(() => expect(over).toHaveTextContent('超過'));
+    expect(over).toHaveClass('budget-over');
+    expect(over).toHaveTextContent('¥12,500 / ¥10,000¥2,500 超過・125%');
+    const warning = screen.getByTestId('budget-食費');
+    expect(warning).toHaveClass('budget-warning');
+    expect(warning).toHaveTextContent('注意');
+  });
+
+  it('予算がない月は設定画面へ案内する', async () => {
+    await setup();
+    await renderHome();
+    await waitFor(() => expect(budgetsSection()).toHaveTextContent('この月の予算はありません'));
+    expect(within(budgetsSection()).getByRole('link', { name: '設定' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+  });
+
+  it('超過カテゴリを上部にまとめて知らせ、なければ表示しない', async () => {
+    const { cat, save } = await setup();
+    await setBudget(cat('外食'), '2026-10', '10000');
+    await setBudget(cat('趣味・娯楽'), '2026-10', '5000');
+    await setBudget(cat('食費'), '2026-10', '40000');
+    await save({ amount: '10001', categoryId: cat('外食') });
+    await save({ amount: '8000', categoryId: cat('趣味・娯楽') });
+    await save({ date: '2026-09-10', amount: '1', categoryId: cat('食費') });
+
+    const { user } = await renderHome();
+    expect(await screen.findByTestId('over-budget')).toHaveTextContent(
+      '予算超過：外食、趣味・娯楽',
+    );
+    await user.click(screen.getByRole('button', { name: '前月' }));
+    expect(screen.queryByTestId('over-budget')).not.toBeInTheDocument();
+  });
+
+  it('非表示のカテゴリは消化状況とまとめに出さない', async () => {
+    const { cat, save } = await setup();
+    await setBudget(cat('Amazon'), '2026-10', '5000');
+    await setBudget(cat('食費'), '2026-10', '40000');
+    await save({ amount: '9000', categoryId: cat('Amazon') });
+    await setCategoryHidden(cat('Amazon'), true);
+
+    await renderHome();
+    await waitFor(() => expect(screen.getByTestId('budget-食費')).toBeInTheDocument());
+    expect(screen.queryByTestId('budget-Amazon')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('over-budget')).not.toBeInTheDocument();
   });
 });

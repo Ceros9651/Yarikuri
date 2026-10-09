@@ -63,9 +63,9 @@ export function BackupSection() {
       setNotice({ kind: 'error', text: `読み込めませんでした：${result.error}` });
       return;
     }
-    const { accounts, categories, transactions } = result.data;
+    const { accounts, categories, transactions, budgets } = result.data;
     const ok = window.confirm(
-      `今のデータをすべて削除し、バックアップの内容（口座${accounts.length}件・カテゴリ${categories.length}件・取引${transactions.length}件）で置き換えます。よろしいですか？`,
+      `今のデータをすべて削除し、バックアップの内容（口座${accounts.length}件・カテゴリ${categories.length}件・取引${transactions.length}件・予算${budgets.length}件）で置き換えます。よろしいですか？`,
     );
     if (!ok) {
       setNotice(null);

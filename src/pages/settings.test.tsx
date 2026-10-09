@@ -1,6 +1,6 @@
 import { within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { addAccount, saveTransaction } from '../db/repository';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { addAccount, saveTransaction, setBudget, setCategoryHidden } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import { computeBalance } from '../domain/balance';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -219,8 +219,96 @@ describe('カテゴリ管理', () => {
     const breakdown = await screen.findByRole('region', { name: 'カテゴリ別の出費' });
     await waitFor(() => expect(breakdown).toHaveTextContent('Amazon¥2,500'));
 
-    await user.click(screen.getByRole('link', { name: /設定/ }));
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' });
+    await user.click(within(nav).getByRole('link', { name: /設定/ }));
     await user.click(await screen.findByRole('button', { name: 'Amazonを再表示' }));
     await waitFor(async () => expect((await db.categories.get(amazon))?.hidden).toBe(false));
+  });
+});
+
+describe('予算', () => {
+  const budgetsSection = () => screen.getByRole('region', { name: '予算' });
+  const row = (name: string) =>
+    within(budgetsSection()).getByRole('form', { name: `${name}の予算` });
+
+  /** 今日を 2026-10-10 にして設定画面を開く */
+  async function renderSettings() {
+    vi.useFakeTimers({ now: new Date(2026, 9, 10), toFake: ['Date'] });
+    const result = await renderApp('/settings');
+    vi.useRealTimers();
+    await within(budgetsSection()).findByRole('form', { name: '食費の予算' });
+    return result;
+  }
+
+  const categoryId = async (name: string) =>
+    (await db.categories.toArray()).find((c) => c.name === name)!.id;
+
+  it('月を選んで予算を設定すると、次の月に引き継がれる', async () => {
+    const { user } = await renderSettings();
+    await user.type(within(row('食費')).getByLabelText('食費の予算額'), '40000');
+    await user.click(within(row('食費')).getByRole('button', { name: '保存' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('budget-source-食費')).toHaveTextContent(
+        '予算 ¥40,000（この月に設定）',
+      ),
+    );
+    expect(await db.budgets.toArray()).toEqual([
+      { categoryId: await categoryId('食費'), month: '2026-10', amount: 40_000 },
+    ]);
+
+    await user.click(within(budgetsSection()).getByRole('button', { name: '次月' }));
+    expect(await screen.findByTestId('budget-source-食費')).toHaveTextContent(
+      '予算 ¥40,000（2026年10月から引き継ぎ）',
+    );
+    expect(within(row('食費')).getByLabelText('食費の予算額')).toHaveValue('40000');
+  });
+
+  it('不正な予算額はエラーを表示し、保存しない', async () => {
+    const { user } = await renderSettings();
+    await user.type(within(row('食費')).getByLabelText('食費の予算額'), '0');
+    await user.click(within(row('食費')).getByRole('button', { name: '保存' }));
+
+    expect(await within(budgetsSection()).findByRole('alert')).toHaveTextContent(
+      '予算は1〜999,999,999円の整数で入力してください',
+    );
+    expect(await db.budgets.count()).toBe(0);
+  });
+
+  it('予算を解除すると予算なしになる', async () => {
+    await ensureSeeded();
+    await setBudget(await categoryId('外食'), '2026-10', '10000');
+    const { user } = await renderSettings();
+    await user.click(within(row('外食')).getByRole('button', { name: '外食の予算を解除' }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('budget-source-外食')).toHaveTextContent(
+        '予算なし（この月に解除）',
+      ),
+    );
+    expect(within(row('外食')).getByLabelText('外食の予算額')).toHaveValue('');
+    expect(
+      within(row('外食')).queryByRole('button', { name: '外食の予算を解除' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('非表示のカテゴリと収入カテゴリは一覧に出ない', async () => {
+    await ensureSeeded();
+    await setCategoryHidden(await categoryId('Amazon'), true);
+    await renderSettings();
+    const list = within(budgetsSection()).getByRole('list', { name: 'カテゴリ別の予算' });
+    expect(within(list).queryByText('Amazon')).not.toBeInTheDocument();
+    expect(within(list).queryByText('給与')).not.toBeInTheDocument();
+    expect(within(list).getByText('食費')).toBeInTheDocument();
+  });
+
+  it('再表示すると予算が戻る', async () => {
+    await ensureSeeded();
+    const amazon = await categoryId('Amazon');
+    await setBudget(amazon, '2026-10', '5000');
+    await setCategoryHidden(amazon, true);
+    await setCategoryHidden(amazon, false);
+    await renderSettings();
+    expect(screen.getByTestId('budget-source-Amazon')).toHaveTextContent('予算 ¥5,000');
   });
 });

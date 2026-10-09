@@ -1,6 +1,12 @@
 import { within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addAccount, saveTransaction, setAccountHidden, setCategoryHidden } from '../db/repository';
+import {
+  addAccount,
+  saveTransaction,
+  setAccountHidden,
+  setBudget,
+  setCategoryHidden,
+} from '../db/repository';
 import { computeBalance } from '../domain/balance';
 import { todayString } from '../domain/date';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -330,5 +336,91 @@ describe('取引の編集と削除', () => {
     await screen.findByRole('heading', { level: 1, name: '取引一覧' });
     expect((await db.transactions.get(id))?.amount).toBe(-500);
     expect(await balanceOf(wallet)).toBe(4_800);
+  });
+});
+
+describe('出費保存時の予算アラート', () => {
+  const month = todayString().slice(0, 7);
+
+  async function setupBudget(budget: string, spent: string) {
+    const ids = await setup();
+    await setBudget(ids.cat('外食'), month, budget);
+    if (spent !== '0') {
+      await saveTransaction(
+        {
+          type: 'expense',
+          date: todayString(),
+          amount: spent,
+          accountId: ids.wallet,
+          toAccountId: '',
+          categoryId: ids.cat('外食'),
+        },
+        '',
+      );
+    }
+    return ids;
+  }
+
+  async function saveEatOut(amount: string) {
+    const result = await renderApp('/new');
+    const { user } = result;
+    await user.type(screen.getByLabelText('金額'), amount);
+    await user.selectOptions(await screen.findByLabelText('カテゴリ'), '外食');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    return result;
+  }
+
+  it('保存で予算を超えたら、ホームでメッセージを表示する', async () => {
+    await setupBudget('10000', '8000');
+    await saveEatOut('3000');
+    expect(await screen.findByTestId('budget-alert')).toHaveTextContent(
+      '外食が予算を超過しました（¥11,000 / ¥10,000）',
+    );
+  });
+
+  it('予算の80%に達したら、注意のメッセージを表示する', async () => {
+    await setupBudget('10000', '7000');
+    await saveEatOut('1000');
+    const alert = await screen.findByTestId('budget-alert');
+    expect(alert).toHaveTextContent('外食が予算の80%に達しました（¥8,000 / ¥10,000）');
+    expect(alert).toHaveClass('warning');
+  });
+
+  it('予算内なら表示しない', async () => {
+    await setupBudget('10000', '0');
+    await saveEatOut('1000');
+    expect(screen.queryByTestId('budget-alert')).not.toBeInTheDocument();
+  });
+
+  it('閉じると消え、別の画面へ移動しても消える', async () => {
+    await setupBudget('10000', '9000');
+    const { user } = await saveEatOut('2000');
+    await user.click(await screen.findByRole('button', { name: '予算のお知らせを閉じる' }));
+    expect(screen.queryByTestId('budget-alert')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: /入力/ }));
+    await user.type(screen.getByLabelText('金額'), '100');
+    await user.selectOptions(await screen.findByLabelText('カテゴリ'), '外食');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByTestId('budget-alert')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: /取引一覧/ }));
+    await screen.findByRole('heading', { level: 1, name: '取引一覧' });
+    expect(screen.queryByTestId('budget-alert')).not.toBeInTheDocument();
+  });
+
+  it('編集して保存すると、取引一覧でメッセージを表示する', async () => {
+    await setupBudget('10000', '5000');
+    const [tx] = await db.transactions.toArray();
+    const { user } = await renderApp(`/transactions/${tx.id}`);
+    const amount = await screen.findByLabelText('金額');
+    await user.clear(amount);
+    await user.type(amount, '12000');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await screen.findByRole('heading', { level: 1, name: '取引一覧' });
+    expect(await screen.findByTestId('budget-alert')).toHaveTextContent(
+      '外食が予算を超過しました（¥12,000 / ¥10,000）',
+    );
   });
 });

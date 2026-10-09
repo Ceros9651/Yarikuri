@@ -2,7 +2,7 @@ import { fireEvent } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { exportData, importData } from '../db/backup';
 import { YarikuriDB } from '../db/db';
-import { addAccount, saveTransaction } from '../db/repository';
+import { addAccount, clearBudget, saveTransaction, setBudget } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import { createBackup, parseBackup } from '../domain/backup';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -61,6 +61,8 @@ async function populate(target: YarikuriDB = db) {
     undefined,
     target,
   );
+  await setBudget(food, '2026-10', '40000', target);
+  await clearBudget(food, '2026-12', target);
 }
 
 function backupFile(content: string, name = 'yarikuri-backup.json') {
@@ -87,6 +89,7 @@ describe('エクスポートとインポートの往復', () => {
       if (!parsed.ok) throw new Error(parsed.error);
       await importData(parsed.data, other);
       expect(await exportData(other)).toEqual(exported);
+      expect(exported.budgets).toHaveLength(2);
     } finally {
       await other.delete();
     }
@@ -115,6 +118,7 @@ describe('バックアップ画面', () => {
     expect(blob.name).toMatch(/^yarikuri-backup-\d{4}-\d{2}-\d{2}\.json$/);
     const parsed = parseBackup(await blob.text());
     expect(parsed.ok && parsed.data.transactions).toHaveLength(4);
+    expect(parsed.ok && parsed.data.budgets).toHaveLength(2);
     await waitFor(() =>
       expect(screen.getByTestId('last-exported')).not.toHaveTextContent('まだ書き出していません'),
     );
@@ -134,8 +138,46 @@ describe('バックアップ画面', () => {
     await chooseFile(backupFile(text));
 
     expect(await screen.findByRole('status')).toHaveTextContent('バックアップから復元しました');
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('取引4件'));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('取引4件・予算2件'));
     expect(await exportData()).toEqual(expected);
+  });
+
+  it('予算を含まない旧形式のファイルを読み込むと、予算なしで復元される', async () => {
+    const source = new YarikuriDB('old-device');
+    await populate(source);
+    const { budgets: _omit, ...data } = await exportData(source);
+    void _omit;
+    await source.delete();
+    const v1 = { ...createBackup({ ...data, budgets: [] }), version: 1 };
+    Reflect.deleteProperty(v1, 'budgets');
+
+    await populate();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await renderApp('/settings');
+    await chooseFile(backupFile(JSON.stringify(v1)));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('バックアップから復元しました');
+    const after = await exportData();
+    expect(after.transactions).toEqual(data.transactions);
+    expect(after.budgets).toEqual([]);
+  });
+
+  it('存在しないカテゴリの予算を含むファイルはエラーを表示し、データは変わらない', async () => {
+    await populate();
+    const before = await exportData();
+    const broken = createBackup({
+      ...before,
+      budgets: [{ categoryId: 'no-such', month: '2026-10', amount: 1000 }],
+    });
+    const confirm = vi.spyOn(window, 'confirm');
+    await renderApp('/settings');
+    await chooseFile(backupFile(JSON.stringify(broken)));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      '読み込めませんでした：存在しない出費カテゴリを参照している予算があります',
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(await exportData()).toEqual(before);
   });
 
   it('上書き確認でキャンセルするとデータは変わらない', async () => {

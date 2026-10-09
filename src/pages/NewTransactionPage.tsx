@@ -6,7 +6,7 @@ export function NewTransactionPage() {
   return (
     <>
       <h1>入力</h1>
-      <TransactionForm onSaved={() => navigate('/')} />
+      <TransactionForm onSaved={(_id, budgetAlert) => navigate('/', { state: { budgetAlert } })} />
     </>
   );
 }
