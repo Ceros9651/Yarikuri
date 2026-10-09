@@ -56,7 +56,7 @@
 
 ## 9. デプロイとドキュメント
 
-- [ ] 9.1 `.github/workflows/deploy.yml`（dev への push で lint・test・build を行い、GitHub Pages にデプロイ）を作る。Actions の実行が成功し、公開 URL でアプリが開くことを確認する
+- [x] 9.1 `.github/workflows/deploy.yml`（dev への push で lint・test・build を行い、GitHub Pages にデプロイ）を作る。Actions の実行が成功し、公開 URL でアプリが開くことを確認する
 - [x] 9.2 README に使い方（ホーム画面への追加手順：iOS/Android、ホーム画面から起動して使うこと、定期的にバックアップすること）と開発コマンドを書き、記載どおりにコマンドが動くことを確認する
 
 ## 10. 実機での結合確認
