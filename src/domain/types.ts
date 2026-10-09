@@ -41,6 +41,17 @@ export interface Transaction {
   updatedAt: string;
 }
 
+/**
+ * 出費カテゴリの予算の設定記録。「month からの予算を amount にする」を表す。
+ * amount が null の記録は「month から予算なし（解除）」。設定のない月は前の記録を引き継ぐ
+ */
+export interface Budget {
+  categoryId: string;
+  /** 'YYYY-MM' */
+  month: string;
+  amount: number | null;
+}
+
 export const ACCOUNT_TYPES: readonly AccountType[] = ['cash', 'bank', 'emoney', 'credit'];
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {

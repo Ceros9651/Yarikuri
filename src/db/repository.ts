@@ -1,4 +1,5 @@
 import { computeAdjustmentAmount } from '../domain/balance';
+import { budgetAlertFor, type BudgetAlert } from '../domain/budget';
 import type { Account, AccountType, Category, CategoryKind, Transaction } from '../domain/types';
 import {
   parseAmount,
@@ -109,6 +110,40 @@ export async function setCategoryHidden(
   await db.categories.update(id, { hidden });
 }
 
+// ---- 予算（出費カテゴリのみ。設定のない月は前の設定を引き継ぐ） ----
+
+async function assertExpenseCategory(categoryId: string, db: YarikuriDB): Promise<void> {
+  const category = await db.categories.get(categoryId);
+  if (!category) throw new Error('カテゴリが見つかりません');
+  if (category.kind !== 'expense')
+    throw new ValidationError('予算は出費カテゴリにだけ設定できます');
+}
+
+/** month 以降の予算を設定する。金額は 1〜999,999,999 の整数 */
+export async function setBudget(
+  categoryId: string,
+  month: string,
+  amountInput: string,
+  db: YarikuriDB = defaultDb,
+): Promise<void> {
+  const amount = parseAmount(amountInput);
+  if (amount === null) {
+    throw new ValidationError('予算は1〜999,999,999円の整数で入力してください');
+  }
+  await assertExpenseCategory(categoryId, db);
+  await db.budgets.put({ categoryId, month, amount });
+}
+
+/** month 以降を予算なしにする */
+export async function clearBudget(
+  categoryId: string,
+  month: string,
+  db: YarikuriDB = defaultDb,
+): Promise<void> {
+  await assertExpenseCategory(categoryId, db);
+  await db.budgets.put({ categoryId, month, amount: null });
+}
+
 // ---- 取引 ----
 
 /**
@@ -162,6 +197,28 @@ export async function saveTransaction(
     await db.transactions.put(tx);
     return tx.id;
   });
+}
+
+/** 保存した取引について、予算の注意・超過のメッセージを返す。該当しなければ null */
+export async function getBudgetAlert(
+  id: string,
+  db: YarikuriDB = defaultDb,
+): Promise<BudgetAlert | null> {
+  return db.transaction(
+    'r',
+    [db.accounts, db.categories, db.transactions, db.budgets],
+    async () => {
+      const tx = await db.transactions.get(id);
+      if (!tx) return null;
+      return budgetAlertFor(
+        tx,
+        await db.transactions.toArray(),
+        await db.accounts.toArray(),
+        await db.categories.toArray(),
+        await db.budgets.toArray(),
+      );
+    },
+  );
 }
 
 export async function deleteTransaction(id: string, db: YarikuriDB = defaultDb): Promise<void> {

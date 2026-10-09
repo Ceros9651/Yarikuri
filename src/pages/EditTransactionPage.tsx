@@ -45,7 +45,7 @@ export function EditTransactionPage() {
         key={tx.id}
         initial={tx}
         initialAmount={initialAmount}
-        onSaved={() => navigate('/transactions')}
+        onSaved={(_id, budgetAlert) => navigate('/transactions', { state: { budgetAlert } })}
       />
       <div className="form-actions">
         <button type="button" className="danger" onClick={handleDelete}>

@@ -10,7 +10,8 @@ import {
   type TransactionType,
 } from '../domain/types';
 import { canUseAccount, type TransactionErrors } from '../domain/validation';
-import { saveTransaction, ValidationError } from '../db/repository';
+import { getBudgetAlert, saveTransaction, ValidationError } from '../db/repository';
+import type { BudgetAlert } from '../domain/budget';
 import { useAccounts, useCategories, useTransactions } from '../hooks/useData';
 
 const TYPE_ORDER: TransactionType[] = ['expense', 'income', 'transfer', 'adjustment'];
@@ -27,7 +28,8 @@ interface Props {
   initial?: Transaction;
   /** 金額欄の初期値（残高調整の編集では「実際の残高」） */
   initialAmount?: string;
-  onSaved: (id: string) => void;
+  /** alert は保存した出費で予算が注意・超過になったときのメッセージ */
+  onSaved: (id: string, alert: BudgetAlert | null) => void;
 }
 
 /** 選択肢に id が含まれていればそれを、なければ先頭（except を除く）を選ぶ */
@@ -88,7 +90,7 @@ export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
         initial?.id,
       );
       setErrors({});
-      onSaved(id);
+      onSaved(id, await getBudgetAlert(id));
     } catch (err) {
       if (err instanceof ValidationError) {
         setErrors(Object.keys(err.fields).length > 0 ? err.fields : { amount: err.message });

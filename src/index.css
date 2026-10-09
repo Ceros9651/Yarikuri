@@ -10,6 +10,7 @@
   --income: #15803d;
   --expense: #c2410c;
   --danger: #b91c1c;
+  --warning: #b45309;
   --bar: #22c55e;
   --radius: 12px;
   --tab-height: 60px;
@@ -41,6 +42,7 @@
     --income: #4ade80;
     --expense: #fb923c;
     --danger: #f87171;
+    --warning: #fbbf24;
     --bar: #16a34a;
     color-scheme: dark;
   }
@@ -409,4 +411,81 @@ h3 {
 .row-actions {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* 予算の設定 */
+.list > li.budget-setting {
+  display: block;
+}
+
+.budget-setting-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+  margin-bottom: 6px;
+}
+
+/* ホームの予算 */
+.budget-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.budget-sub {
+  grid-column: 1 / -1;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.budget-badge {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid currentcolor;
+}
+
+.budget-warning .budget-badge,
+.budget-warning .budget-sub {
+  color: var(--warning);
+}
+
+.budget-warning .bar-fill {
+  background: var(--warning);
+}
+
+.budget-over .budget-badge,
+.budget-over .budget-sub {
+  color: var(--danger);
+}
+
+.budget-over .bar-fill {
+  background: var(--danger);
+}
+
+.notice.budget-alert {
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  font-weight: 600;
+}
+
+.notice.budget-alert.warning {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.notice-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notice-row > button {
+  flex-shrink: 0;
+  padding: 0 8px;
 }
