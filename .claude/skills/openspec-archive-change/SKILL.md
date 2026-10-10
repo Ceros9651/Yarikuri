@@ -125,16 +125,10 @@ In both branches, never create the root as a side effect: do not run `openspec i
    - Determine what changes would be applied (adds, modifications, removals, renames)
    - Continue assessing the remaining capabilities even when one is sync-blocked. Show a combined summary before prompting.
 
-   **Prompt options:**
-   - If any capability is sync-blocked: explain why and offer only "Archive without syncing", "Cancel"
-   - Otherwise, if changes needed: "Sync now (recommended)", "Archive without syncing"
-   - Otherwise, if already synced: "Archive now", "Sync anyway", "Cancel"
-
-   Route on the answer:
-   - "Cancel" — stop, do not archive
-   - "Archive without syncing" or "Archive now" — proceed to archive
-   - "Sync now" or "Sync anyway" — sync, then verify (below). Do not start any sync while a capability is sync-blocked; explain the blocker and repeat the available choices.
-   - Anything else — ask again rather than archiving
+   **Sync policy (project override): always sync — do NOT prompt the user about syncing.**
+   - If any capability is sync-blocked: this is the only case that prompts. Explain why and offer only "Archive without syncing", "Cancel". "Cancel" — stop, do not archive; "Archive without syncing" — proceed to archive; anything else — ask again rather than archiving.
+   - Otherwise, if changes needed: show the combined summary, announce "Syncing delta specs to main specs", and sync automatically without asking, then verify (below).
+   - Otherwise, if already synced: show the summary and proceed to archive without asking.
 
    Before a selected sync writes any main spec, run
    `openspec instructions specs --change "<name>" --json` once with the same
@@ -200,9 +194,9 @@ In both branches, never create the root as a side effect: do not run `openspec i
 - Don't block archive on warnings - just inform and confirm
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
-- If sync is requested, run the `openspec-sync-specs` workflow inline (agent-driven)
+- Always sync delta specs automatically (no sync prompt) unless a capability is sync-blocked; run the `openspec-sync-specs` workflow inline (agent-driven)
 - Never archive while a spec sync is still in flight — run the sync inline and verify the main specs before moving `changeRoot`
-- If delta specs exist, always run the sync assessment and show the combined summary before prompting
+- If delta specs exist, always run the sync assessment and show the combined summary before syncing
 - Apply relevant runtime context and report conflicts; operation guidance remains advisory
 - Consider every guidance entry and explain any inapplicable or conflicting advice
 - Existing CLI checks, resolved paths, prompts, and command contracts are unchanged
