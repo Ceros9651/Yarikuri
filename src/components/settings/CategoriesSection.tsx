@@ -98,7 +98,14 @@ function CategoryRow({ category }: { category: Category }) {
         {...listeners}
         aria-label={`${category.name}を並べ替え`}
       >
-        ⋮⋮
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" fill="currentColor">
+          {[5, 10, 15].map((y) => (
+            <g key={y}>
+              <circle cx="7" cy={y} r="1.6" />
+              <circle cx="13" cy={y} r="1.6" />
+            </g>
+          ))}
+        </svg>
       </button>
       <span className="truncate">{category.name}</span>
       <span className="row-actions">

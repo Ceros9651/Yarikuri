@@ -540,9 +540,15 @@ button.drag-handle {
   background: none;
   min-width: 36px;
   min-height: 36px;
-  padding: 0 6px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
-  letter-spacing: -0.2em;
+}
+
+button.drag-handle > svg {
+  display: block;
 }
 
 .sortable-row.dragging button.drag-handle {
