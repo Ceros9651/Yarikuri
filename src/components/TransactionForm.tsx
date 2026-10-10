@@ -153,21 +153,22 @@ export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
       </label>
 
       {hasCategory && (
-        <label className="field">
+        <div className="field">
           <span>カテゴリ</span>
-          <select
-            aria-label="カテゴリ"
-            value={selectedCategory}
-            onChange={(e) => setCategoryId(e.target.value)}
-          >
+          <div className="chips" role="group" aria-label="カテゴリ">
             {categoryOptions.map((c) => (
-              <option key={c.id} value={c.id}>
+              <button
+                key={c.id}
+                type="button"
+                aria-pressed={selectedCategory === c.id}
+                onClick={() => setCategoryId(c.id)}
+              >
                 {c.name}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
           {errors.categoryId && <em className="field-error">{errors.categoryId}</em>}
-        </label>
+        </div>
       )}
 
       <label className="field">
