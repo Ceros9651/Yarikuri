@@ -35,6 +35,11 @@ const optionNames = (select: HTMLElement) =>
     .getAllByRole('option')
     .map((o) => o.textContent);
 
+const categoryChipNames = () =>
+  within(screen.getByRole('group', { name: 'カテゴリ' }))
+    .getAllByRole('button')
+    .map((b) => b.textContent);
+
 beforeEach(resetDb);
 afterEach(() => vi.restoreAllMocks());
 
@@ -53,7 +58,7 @@ describe('入力画面', () => {
     const { wallet } = await setup();
     const { user } = await renderApp('/new');
     await user.type(screen.getByLabelText('金額'), '800');
-    await user.selectOptions(await screen.findByLabelText('カテゴリ'), '食費');
+    await user.click(await screen.findByRole('button', { name: '食費' }));
     await user.selectOptions(screen.getByLabelText('支払元'), '財布');
     await user.type(screen.getByLabelText('メモ'), 'コンビニ');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -69,7 +74,7 @@ describe('入力画面', () => {
     const { user } = await renderApp('/new');
     await user.click(screen.getByRole('button', { name: '収入' }));
     await user.type(screen.getByLabelText('金額'), '250000');
-    await user.selectOptions(await screen.findByLabelText('カテゴリ'), '給与');
+    await user.click(await screen.findByRole('button', { name: '給与' }));
     await user.selectOptions(screen.getByLabelText('入金先'), 'A銀行');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
@@ -159,14 +164,15 @@ describe('選択肢の絞り込み', () => {
     await waitFor(() =>
       expect(optionNames(screen.getByLabelText('支払元'))).toEqual(['財布', 'A銀行', 'Suica']),
     );
-    expect(optionNames(screen.getByLabelText('カテゴリ'))).not.toContain('Amazon');
+    await waitFor(() => expect(categoryChipNames()).toContain('食費'));
+    expect(categoryChipNames()).not.toContain('Amazon');
   });
 
   it('カテゴリは種類ごとに出し分ける', async () => {
     await setup();
     const { user } = await renderApp('/new');
-    await waitFor(() => expect(optionNames(screen.getByLabelText('カテゴリ'))).toContain('食費'));
-    expect(optionNames(screen.getByLabelText('カテゴリ'))).toEqual([
+    await waitFor(() => expect(categoryChipNames()).toContain('食費'));
+    expect(categoryChipNames()).toEqual([
       '食費',
       '日用品',
       '交通費',
@@ -178,13 +184,7 @@ describe('選択肢の絞り込み', () => {
       'その他',
     ]);
     await user.click(screen.getByRole('button', { name: '収入' }));
-    expect(optionNames(screen.getByLabelText('カテゴリ'))).toEqual([
-      '給与',
-      '賞与',
-      '副業',
-      '臨時収入',
-      'その他',
-    ]);
+    expect(categoryChipNames()).toEqual(['給与', '賞与', '副業', '臨時収入', 'その他']);
   });
 });
 
@@ -192,7 +192,7 @@ describe('入力エラー', () => {
   it.each(['0', '-5', '1.5', ''])('金額「%s」は保存されない', async (input) => {
     await setup();
     const { user } = await renderApp('/new');
-    await screen.findByLabelText('カテゴリ');
+    await screen.findByRole('group', { name: 'カテゴリ' });
     if (input) await user.type(screen.getByLabelText('金額'), input);
     await user.click(screen.getByRole('button', { name: '保存' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('金額は1〜999,999,999円');
@@ -365,7 +365,7 @@ describe('出費保存時の予算アラート', () => {
     const result = await renderApp('/new');
     const { user } = result;
     await user.type(screen.getByLabelText('金額'), amount);
-    await user.selectOptions(await screen.findByLabelText('カテゴリ'), '外食');
+    await user.click(await screen.findByRole('button', { name: '外食' }));
     await user.click(screen.getByRole('button', { name: '保存' }));
     await screen.findByRole('heading', { level: 1, name: 'ホーム' });
     return result;
@@ -401,7 +401,7 @@ describe('出費保存時の予算アラート', () => {
 
     await user.click(screen.getByRole('link', { name: /入力/ }));
     await user.type(screen.getByLabelText('金額'), '100');
-    await user.selectOptions(await screen.findByLabelText('カテゴリ'), '外食');
+    await user.click(await screen.findByRole('button', { name: '外食' }));
     await user.click(screen.getByRole('button', { name: '保存' }));
     expect(await screen.findByTestId('budget-alert')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: /取引一覧/ }));

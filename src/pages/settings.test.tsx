@@ -129,9 +129,9 @@ describe('カテゴリ管理', () => {
     await within(section).findByText('サブスク');
 
     await user.click(screen.getByRole('link', { name: /入力/ }));
-    const select = await screen.findByLabelText('カテゴリ');
+    const group = await screen.findByRole('group', { name: 'カテゴリ' });
     await waitFor(() =>
-      expect(within(select).getByRole('option', { name: 'サブスク' })).toBeInTheDocument(),
+      expect(within(group).getByRole('button', { name: 'サブスク' })).toBeInTheDocument(),
     );
   });
 
