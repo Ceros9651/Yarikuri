@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { computeBalance } from '../domain/balance';
 import { todayString } from '../domain/date';
 import { formatYen } from '../domain/format';
@@ -9,7 +9,12 @@ import {
   type Transaction,
   type TransactionType,
 } from '../domain/types';
-import { canUseAccount, type TransactionErrors } from '../domain/validation';
+import {
+  canUseAccount,
+  parseAmount,
+  parseBalance,
+  type TransactionErrors,
+} from '../domain/validation';
 import { getBudgetAlert, saveTransaction, ValidationError } from '../db/repository';
 import type { BudgetAlert } from '../domain/budget';
 import { useAccounts, useCategories, useTransactions } from '../hooks/useData';
@@ -28,8 +33,13 @@ interface Props {
   initial?: Transaction;
   /** 金額欄の初期値（残高調整の編集では「実際の残高」） */
   initialAmount?: string;
-  /** alert は保存した出費で予算が注意・超過になったときのメッセージ */
-  onSaved: (id: string, alert: BudgetAlert | null) => void;
+  /**
+   * alert は保存した出費で予算が注意・超過になったときのメッセージ。
+   * summary は保存した内容の要約（例: 「出費・食費 ¥800」）
+   */
+  onSaved: (id: string, alert: BudgetAlert | null, summary: string) => void;
+  /** 入力値が不正で保存できなかったとき */
+  onError?: () => void;
 }
 
 /** 選択肢に id が含まれていればそれを、なければ先頭（except を除く）を選ぶ */
@@ -38,7 +48,7 @@ function pick<T extends { id: string }>(options: T[], id: string, except?: strin
   return options.find((o) => o.id !== except)?.id ?? '';
 }
 
-export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
+export function TransactionForm({ initial, initialAmount, onSaved, onError }: Props) {
   const accounts = useAccounts();
   const categories = useCategories();
   const transactions = useTransactions() ?? [];
@@ -52,6 +62,7 @@ export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
   const [memo, setMemo] = useState(initial?.memo ?? '');
   const [errors, setErrors] = useState<TransactionErrors>({});
   const [saving, setSaving] = useState(false);
+  const amountRef = useRef<HTMLInputElement>(null);
 
   // 非表示の口座・カテゴリは選択肢から外す。ただし編集中の取引が使っているものは残す
   const visibleAccount = (a: Account) =>
@@ -73,6 +84,19 @@ export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
       ? computeBalance(adjustmentAccount, transactions, date, initial?.id)
       : null;
 
+  /** 保存した内容の要約。金額は保存前に検証済み */
+  function summarize(): string {
+    const name = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
+    const value = type === 'adjustment' ? (parseBalance(amount) ?? 0) : (parseAmount(amount) ?? 0);
+    const target =
+      type === 'transfer'
+        ? `${name(selectedFrom)}→${name(selectedTo)}`
+        : type === 'adjustment'
+          ? name(selectedFrom)
+          : (categories.find((c) => c.id === selectedCategory)?.name ?? '');
+    return `${TRANSACTION_TYPE_LABELS[type]}・${target} ${formatYen(value)}`;
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -89,11 +113,20 @@ export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
         memo,
         initial?.id,
       );
+      const summary = summarize();
       setErrors({});
-      onSaved(id, await getBudgetAlert(id));
+      if (!initial) {
+        // 新規入力は続けて入力できるよう、種類・日付・口座を残して他を初期状態に戻す
+        setAmount('');
+        setMemo('');
+        setCategoryId('');
+        amountRef.current?.focus();
+      }
+      onSaved(id, await getBudgetAlert(id), summary);
     } catch (err) {
       if (err instanceof ValidationError) {
         setErrors(Object.keys(err.fields).length > 0 ? err.fields : { amount: err.message });
+        onError?.();
       } else {
         throw err;
       }
@@ -136,6 +169,7 @@ export function TransactionForm({ initial, initialAmount, onSaved }: Props) {
       <label className="field">
         <span>{type === 'adjustment' ? '実際の残高' : '金額'}</span>
         <input
+          ref={amountRef}
           type="text"
           aria-label={type === 'adjustment' ? '実際の残高' : '金額'}
           inputMode="numeric"
