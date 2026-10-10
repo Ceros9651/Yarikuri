@@ -205,45 +205,47 @@ export function TransactionForm({ initial, initialAmount, onSaved, onError }: Pr
         </div>
       )}
 
-      <label className="field">
+      <div className="field">
         <span>{FROM_LABELS[type]}</span>
-        <select
-          aria-label={FROM_LABELS[type]}
-          value={selectedFrom}
-          onChange={(e) => setAccountId(e.target.value)}
-        >
+        <div className="chips" role="group" aria-label={FROM_LABELS[type]}>
           {fromOptions.map((a) => (
-            <option key={a.id} value={a.id}>
+            <button
+              key={a.id}
+              type="button"
+              aria-pressed={selectedFrom === a.id}
+              onClick={() => setAccountId(a.id)}
+            >
               {a.name}
-            </option>
+            </button>
           ))}
-        </select>
+        </div>
         {errors.accountId && <em className="field-error">{errors.accountId}</em>}
         {currentBalance !== null && (
           <small className="muted">アプリ上の残高: {formatYen(currentBalance)}</small>
         )}
-      </label>
+      </div>
 
       {type === 'transfer' && (
-        <label className="field">
+        <div className="field">
           <span>振替先</span>
-          <select
-            aria-label="振替先"
-            value={selectedTo}
-            onChange={(e) => setToAccountId(e.target.value)}
-          >
+          <div className="chips" role="group" aria-label="振替先">
             {toOptions.map((a) => (
-              <option key={a.id} value={a.id}>
+              <button
+                key={a.id}
+                type="button"
+                aria-pressed={selectedTo === a.id}
+                onClick={() => setToAccountId(a.id)}
+              >
                 {a.name}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
           {errors.toAccountId && (
             <em className="field-error" role="alert">
               {errors.toAccountId}
             </em>
           )}
-        </label>
+        </div>
       )}
 
       <label className="field">
