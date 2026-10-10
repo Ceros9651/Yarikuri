@@ -1,6 +1,12 @@
 import { within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { addAccount, saveTransaction, setBudget, setCategoryHidden } from '../db/repository';
+import {
+  addAccount,
+  reorderCategories,
+  saveTransaction,
+  setBudget,
+  setCategoryHidden,
+} from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import { computeBalance } from '../domain/balance';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -223,6 +229,37 @@ describe('カテゴリ管理', () => {
     await user.click(within(nav).getByRole('link', { name: /設定/ }));
     await user.click(await screen.findByRole('button', { name: 'Amazonを再表示' }));
     await waitFor(async () => expect((await db.categories.get(amazon))?.hidden).toBe(false));
+  });
+
+  it('表示中のカテゴリにだけ並べ替えハンドルがある', async () => {
+    await ensureSeeded();
+    const amazon = (await db.categories.toArray()).find((c) => c.name === 'Amazon')!.id;
+    await setCategoryHidden(amazon, true);
+    await renderApp('/settings');
+    const section = categoriesSection();
+    await within(section).findByRole('button', { name: '食費を並べ替え' });
+    expect(within(section).getByRole('button', { name: 'その他を並べ替え' })).toBeInTheDocument();
+    expect(within(section).queryByRole('button', { name: 'Amazonを並べ替え' })).toBeNull();
+  });
+
+  it('並べ替えた順序が設定の一覧と入力のカテゴリに反映される', async () => {
+    await ensureSeeded();
+    const expense = (await db.categories.orderBy('sortOrder').toArray()).filter(
+      (c) => c.kind === 'expense',
+    );
+    const eatingOut = expense.find((c) => c.name === '外食')!;
+    await reorderCategories([
+      eatingOut.id,
+      ...expense.filter((c) => c !== eatingOut).map((c) => c.id),
+    ]);
+    const { user } = await renderApp('/settings');
+    const list = await within(categoriesSection()).findByRole('list', { name: '出費のカテゴリ' });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')[0]).toHaveTextContent('外食'));
+    expect(within(list).getAllByRole('listitem')[1]).toHaveTextContent('食費');
+
+    await user.click(screen.getByRole('link', { name: /入力/ }));
+    const group = await screen.findByRole('group', { name: 'カテゴリ' });
+    await waitFor(() => expect(within(group).getAllByRole('button')[0]).toHaveTextContent('外食'));
   });
 });
 

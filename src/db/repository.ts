@@ -110,6 +110,26 @@ export async function setCategoryHidden(
   await db.categories.update(id, { hidden });
 }
 
+/**
+ * orderedIds の順に並べ替える。対象が使っている sortOrder の値を並べ直して割り当てるので、
+ * 対象外（非表示・他の種別）のカテゴリとの相対位置は変わらない
+ */
+export async function reorderCategories(
+  orderedIds: readonly string[],
+  db: YarikuriDB = defaultDb,
+): Promise<void> {
+  await db.transaction('rw', db.categories, async () => {
+    const categories = await db.categories.bulkGet([...orderedIds]);
+    if (categories.some((c) => !c)) throw new Error('カテゴリが見つかりません');
+    const kinds = new Set(categories.map((c) => c!.kind));
+    if (kinds.size > 1) throw new Error('収入と出費のカテゴリは混ぜて並べ替えられません');
+    const sortOrders = categories.map((c) => c!.sortOrder).sort((a, b) => a - b);
+    await db.categories.bulkUpdate(
+      orderedIds.map((key, i) => ({ key, changes: { sortOrder: sortOrders[i] } })),
+    );
+  });
+}
+
 // ---- 予算（出費カテゴリのみ。設定のない月は前の設定を引き継ぐ） ----
 
 async function assertExpenseCategory(categoryId: string, db: YarikuriDB): Promise<void> {
