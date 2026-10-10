@@ -62,7 +62,7 @@ export function HomePage() {
       </section>
 
       <section className="card" aria-labelledby="balances-heading">
-        <h2 id="balances-heading">残高（月末時点）</h2>
+        <h2 id="balances-heading">残高</h2>
         <ul className="list">
           {assetAccounts.map((a) => (
             <li key={a.id}>
