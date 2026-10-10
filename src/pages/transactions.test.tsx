@@ -30,15 +30,16 @@ async function balanceOf(id: string) {
   return computeBalance(account, await db.transactions.toArray());
 }
 
-const optionNames = (select: HTMLElement) =>
-  within(select)
-    .getAllByRole('option')
-    .map((o) => o.textContent);
-
-const categoryChipNames = () =>
-  within(screen.getByRole('group', { name: 'カテゴリ' }))
+/** 口座・カテゴリのチップ群に並ぶ名前 */
+const chipNames = (group: HTMLElement) =>
+  within(group)
     .getAllByRole('button')
     .map((b) => b.textContent);
+
+/** チップ群の中から名前でチップを探す（振替元・振替先には同名のチップが並ぶため） */
+const chip = (group: HTMLElement, name: string) => within(group).getByRole('button', { name });
+
+const categoryChipNames = () => chipNames(screen.getByRole('group', { name: 'カテゴリ' }));
 
 beforeEach(resetDb);
 afterEach(() => vi.restoreAllMocks());
@@ -59,7 +60,7 @@ describe('入力画面', () => {
     const { user } = await renderApp('/new');
     await user.type(screen.getByLabelText('金額'), '800');
     await user.click(await screen.findByRole('button', { name: '食費' }));
-    await user.selectOptions(screen.getByLabelText('支払元'), '財布');
+    await user.click(chip(screen.getByLabelText('支払元'), '財布'));
     await user.type(screen.getByLabelText('メモ'), 'コンビニ');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
@@ -76,7 +77,7 @@ describe('入力画面', () => {
     await user.click(screen.getByRole('button', { name: '収入' }));
     await user.type(screen.getByLabelText('金額'), '250000');
     await user.click(await screen.findByRole('button', { name: '給与' }));
-    await user.selectOptions(screen.getByLabelText('入金先'), 'A銀行');
+    await user.click(chip(screen.getByLabelText('入金先'), 'A銀行'));
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     await screen.findByTestId('saved-message');
@@ -93,7 +94,7 @@ describe('入力画面', () => {
     const { wallet, bank, card } = await setup();
     const { user } = await renderApp('/new');
     await user.type(screen.getByLabelText('金額'), '3000');
-    await user.selectOptions(await screen.findByLabelText('支払元'), 'Aカード');
+    await user.click(chip(await screen.findByLabelText('支払元'), 'Aカード'));
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     await screen.findByTestId('saved-message');
@@ -108,8 +109,8 @@ describe('入力画面', () => {
     const { user } = await renderApp('/new');
     await user.click(screen.getByRole('button', { name: '振替' }));
     await user.type(screen.getByLabelText('金額'), '20000');
-    await user.selectOptions(await screen.findByLabelText('振替元'), 'A銀行');
-    await user.selectOptions(screen.getByLabelText('振替先'), '財布');
+    await user.click(chip(await screen.findByLabelText('振替元'), 'A銀行'));
+    await user.click(chip(screen.getByLabelText('振替先'), '財布'));
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     await screen.findByTestId('saved-message');
@@ -121,7 +122,7 @@ describe('入力画面', () => {
     const { wallet } = await setup();
     const { user } = await renderApp('/new');
     await user.click(screen.getByRole('button', { name: '残高調整' }));
-    await user.selectOptions(await screen.findByLabelText('口座'), '財布');
+    await user.click(chip(await screen.findByLabelText('口座'), '財布'));
     expect(await screen.findByText('アプリ上の残高: ¥5,300')).toBeInTheDocument();
     await user.type(screen.getByLabelText('実際の残高'), '5000');
     await user.click(screen.getByRole('button', { name: '保存' }));
@@ -150,7 +151,7 @@ describe('連続入力', () => {
     await user.type(date, yesterday());
     await user.type(screen.getByLabelText('金額'), '3000');
     await user.click(screen.getByRole('button', { name: '日用品' }));
-    await user.selectOptions(screen.getByLabelText('支払元'), 'Aカード');
+    await user.click(chip(screen.getByLabelText('支払元'), 'Aカード'));
     await user.type(screen.getByLabelText('メモ'), 'スーパー');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
@@ -165,7 +166,10 @@ describe('連続入力', () => {
     expect(screen.getByRole('button', { name: '日用品' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: '出費' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByLabelText('日付')).toHaveValue(yesterday());
-    expect(screen.getByLabelText('支払元')).toHaveDisplayValue('Aカード');
+    expect(chip(screen.getByLabelText('支払元'), 'Aカード')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('保存できなかったときは入力内容を残す', async () => {
@@ -205,15 +209,15 @@ describe('連続入力', () => {
     const { user } = await renderApp('/new');
     await user.click(screen.getByRole('button', { name: '振替' }));
     await user.type(screen.getByLabelText('金額'), '20000');
-    await user.selectOptions(await screen.findByLabelText('振替元'), 'A銀行');
-    await user.selectOptions(screen.getByLabelText('振替先'), '財布');
+    await user.click(chip(await screen.findByLabelText('振替元'), 'A銀行'));
+    await user.click(chip(screen.getByLabelText('振替先'), '財布'));
     await user.click(screen.getByRole('button', { name: '保存' }));
     expect(await screen.findByTestId('saved-message')).toHaveTextContent(
       '振替・A銀行→財布 ¥20,000',
     );
 
     await user.click(screen.getByRole('button', { name: '残高調整' }));
-    await user.selectOptions(await screen.findByLabelText('口座'), '財布');
+    await user.click(chip(await screen.findByLabelText('口座'), '財布'));
     await user.type(screen.getByLabelText('実際の残高'), '5000');
     await user.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() =>
@@ -262,12 +266,27 @@ describe('連続入力', () => {
   });
 });
 
+describe('口座の選択', () => {
+  it('口座はチップを1タップで選び、選択を切り替えられる', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    const payFrom = await screen.findByRole('group', { name: '支払元' });
+    await waitFor(() => expect(chipNames(payFrom)).toContain('Suica'));
+
+    await user.click(chip(payFrom, '財布'));
+    expect(chip(payFrom, '財布')).toHaveAttribute('aria-pressed', 'true');
+    await user.click(chip(payFrom, 'Suica'));
+    expect(chip(payFrom, 'Suica')).toHaveAttribute('aria-pressed', 'true');
+    expect(chip(payFrom, '財布')).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
 describe('選択肢の絞り込み', () => {
   it('クレジットカードは出費の支払元にだけ表示される', async () => {
     await setup();
     const { user } = await renderApp('/new');
     await waitFor(() =>
-      expect(optionNames(screen.getByLabelText('支払元'))).toEqual([
+      expect(chipNames(screen.getByLabelText('支払元'))).toEqual([
         '財布',
         'A銀行',
         'Suica',
@@ -276,14 +295,14 @@ describe('選択肢の絞り込み', () => {
     );
 
     await user.click(screen.getByRole('button', { name: '収入' }));
-    expect(optionNames(screen.getByLabelText('入金先'))).toEqual(['財布', 'A銀行', 'Suica']);
+    expect(chipNames(screen.getByLabelText('入金先'))).toEqual(['財布', 'A銀行', 'Suica']);
 
     await user.click(screen.getByRole('button', { name: '振替' }));
-    expect(optionNames(screen.getByLabelText('振替元'))).toEqual(['財布', 'A銀行', 'Suica']);
-    expect(optionNames(screen.getByLabelText('振替先'))).toEqual(['財布', 'A銀行', 'Suica']);
+    expect(chipNames(screen.getByLabelText('振替元'))).toEqual(['財布', 'A銀行', 'Suica']);
+    expect(chipNames(screen.getByLabelText('振替先'))).toEqual(['財布', 'A銀行', 'Suica']);
 
     await user.click(screen.getByRole('button', { name: '残高調整' }));
-    expect(optionNames(screen.getByLabelText('口座'))).toEqual(['財布', 'A銀行', 'Suica']);
+    expect(chipNames(screen.getByLabelText('口座'))).toEqual(['財布', 'A銀行', 'Suica']);
   });
 
   it('非表示の口座とカテゴリは選択肢に出ない', async () => {
@@ -292,7 +311,7 @@ describe('選択肢の絞り込み', () => {
     await setCategoryHidden(cat('Amazon'), true);
     await renderApp('/new');
     await waitFor(() =>
-      expect(optionNames(screen.getByLabelText('支払元'))).toEqual(['財布', 'A銀行', 'Suica']),
+      expect(chipNames(screen.getByLabelText('支払元'))).toEqual(['財布', 'A銀行', 'Suica']),
     );
     await waitFor(() => expect(categoryChipNames()).toContain('食費'));
     expect(categoryChipNames()).not.toContain('Amazon');
@@ -334,8 +353,8 @@ describe('入力エラー', () => {
     const { user } = await renderApp('/new');
     await user.click(screen.getByRole('button', { name: '振替' }));
     await user.type(screen.getByLabelText('金額'), '1000');
-    await user.selectOptions(await screen.findByLabelText('振替元'), 'A銀行');
-    await user.selectOptions(screen.getByLabelText('振替先'), 'A銀行');
+    await user.click(chip(await screen.findByLabelText('振替元'), 'A銀行'));
+    await user.click(chip(screen.getByLabelText('振替先'), 'A銀行'));
     await user.click(screen.getByRole('button', { name: '保存' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '振替元と異なる口座を選んでください',

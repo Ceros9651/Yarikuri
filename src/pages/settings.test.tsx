@@ -103,16 +103,16 @@ describe('口座管理', () => {
     expect(await db.transactions.count()).toBe(1);
 
     await user.click(screen.getByRole('link', { name: /入力/ }));
-    const payFrom = await screen.findByLabelText('支払元');
-    expect(within(payFrom).queryByRole('option', { name: 'Aカード' })).not.toBeInTheDocument();
+    const payFrom = await screen.findByRole('group', { name: '支払元' });
+    expect(within(payFrom).queryByRole('button', { name: 'Aカード' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: /設定/ }));
     await user.click(await screen.findByRole('button', { name: 'Aカードを再表示' }));
     await waitFor(async () => expect((await db.accounts.get(card))?.hidden).toBe(false));
     await user.click(screen.getByRole('link', { name: /入力/ }));
-    const payFrom2 = await screen.findByLabelText('支払元');
+    const payFrom2 = await screen.findByRole('group', { name: '支払元' });
     await waitFor(() =>
-      expect(within(payFrom2).getByRole('option', { name: 'Aカード' })).toBeInTheDocument(),
+      expect(within(payFrom2).getByRole('button', { name: 'Aカード' })).toBeInTheDocument(),
     );
   });
 });
