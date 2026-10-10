@@ -54,7 +54,7 @@ describe('入力画面', () => {
     expect(screen.getByLabelText('金額')).toHaveAttribute('inputmode', 'numeric');
   });
 
-  it('財布から支払う出費を保存すると残高が減りホームに戻る', async () => {
+  it('財布から支払う出費を保存すると残高が減り、入力画面にとどまる', async () => {
     const { wallet } = await setup();
     const { user } = await renderApp('/new');
     await user.type(screen.getByLabelText('金額'), '800');
@@ -63,7 +63,8 @@ describe('入力画面', () => {
     await user.type(screen.getByLabelText('メモ'), 'コンビニ');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'ホーム' })).toBeInTheDocument();
+    expect(await screen.findByTestId('saved-message')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: '入力' })).toBeInTheDocument();
     const [tx] = await db.transactions.toArray();
     expect(tx).toMatchObject({ type: 'expense', amount: 800, accountId: wallet, memo: 'コンビニ' });
     expect(await balanceOf(wallet)).toBe(4_500);
@@ -78,7 +79,7 @@ describe('入力画面', () => {
     await user.selectOptions(screen.getByLabelText('入金先'), 'A銀行');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
-    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    await screen.findByTestId('saved-message');
     const [tx] = await db.transactions.toArray();
     expect(tx).toMatchObject({
       type: 'income',
@@ -95,7 +96,7 @@ describe('入力画面', () => {
     await user.selectOptions(await screen.findByLabelText('支払元'), 'Aカード');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
-    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    await screen.findByTestId('saved-message');
     const [tx] = await db.transactions.toArray();
     expect(tx).toMatchObject({ type: 'expense', amount: 3_000, accountId: card });
     expect(await balanceOf(wallet)).toBe(5_300);
@@ -111,7 +112,7 @@ describe('入力画面', () => {
     await user.selectOptions(screen.getByLabelText('振替先'), '財布');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
-    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    await screen.findByTestId('saved-message');
     expect(await balanceOf(bank)).toBe(30_000);
     expect(await balanceOf(wallet)).toBe(25_300);
   });
@@ -125,10 +126,139 @@ describe('入力画面', () => {
     await user.type(screen.getByLabelText('実際の残高'), '5000');
     await user.click(screen.getByRole('button', { name: '保存' }));
 
-    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    await screen.findByTestId('saved-message');
     const [tx] = await db.transactions.toArray();
     expect(tx).toMatchObject({ type: 'adjustment', amount: -300 });
     expect(await balanceOf(wallet)).toBe(5_000);
+  });
+});
+
+describe('連続入力', () => {
+  const yesterday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return todayString(d);
+  };
+
+  it('保存後は金額・メモ・カテゴリが初期状態に戻り、種類・日付・支払元は引き継がれる', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    await screen.findByRole('button', { name: '日用品' });
+    const [defaultCategory] = categoryChipNames();
+    const date = screen.getByLabelText('日付');
+    await user.clear(date);
+    await user.type(date, yesterday());
+    await user.type(screen.getByLabelText('金額'), '3000');
+    await user.click(screen.getByRole('button', { name: '日用品' }));
+    await user.selectOptions(screen.getByLabelText('支払元'), 'Aカード');
+    await user.type(screen.getByLabelText('メモ'), 'スーパー');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await screen.findByTestId('saved-message');
+    expect(screen.getByLabelText('金額')).toHaveValue('');
+    expect(screen.getByLabelText('金額')).toHaveFocus();
+    expect(screen.getByLabelText('メモ')).toHaveValue('');
+    expect(screen.getByRole('button', { name: defaultCategory })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: '日用品' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: '出費' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('日付')).toHaveValue(yesterday());
+    expect(screen.getByLabelText('支払元')).toHaveDisplayValue('Aカード');
+  });
+
+  it('保存できなかったときは入力内容を残す', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    await screen.findByRole('group', { name: 'カテゴリ' });
+    await user.type(screen.getByLabelText('メモ'), 'スーパー');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('金額は1〜999,999,999円');
+    expect(screen.getByLabelText('メモ')).toHaveValue('スーパー');
+  });
+
+  it('保存すると内容を含む完了メッセージを表示し、次の保存で置き換える', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    await user.type(screen.getByLabelText('金額'), '800');
+    await user.click(await screen.findByRole('button', { name: '食費' }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByTestId('saved-message')).toHaveTextContent(
+      '保存しました（出費・食費 ¥800）',
+    );
+
+    await user.type(screen.getByLabelText('金額'), '300');
+    await user.click(screen.getByRole('button', { name: '日用品' }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('saved-message')).toHaveTextContent(
+        '保存しました（出費・日用品 ¥300）',
+      ),
+    );
+    expect(screen.getAllByTestId('saved-message')).toHaveLength(1);
+  });
+
+  it('振替と残高調整の完了メッセージには口座名を含める', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    await user.click(screen.getByRole('button', { name: '振替' }));
+    await user.type(screen.getByLabelText('金額'), '20000');
+    await user.selectOptions(await screen.findByLabelText('振替元'), 'A銀行');
+    await user.selectOptions(screen.getByLabelText('振替先'), '財布');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByTestId('saved-message')).toHaveTextContent(
+      '振替・A銀行→財布 ¥20,000',
+    );
+
+    await user.click(screen.getByRole('button', { name: '残高調整' }));
+    await user.selectOptions(await screen.findByLabelText('口座'), '財布');
+    await user.type(screen.getByLabelText('実際の残高'), '5000');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('saved-message')).toHaveTextContent('残高調整・財布 ¥5,000'),
+    );
+  });
+
+  it('保存に失敗したり別の画面へ移動したりすると完了メッセージは消える', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    await user.type(screen.getByLabelText('金額'), '800');
+    await user.click(await screen.findByRole('button', { name: '食費' }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await screen.findByTestId('saved-message');
+
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('金額は1〜999,999,999円');
+    expect(screen.queryByTestId('saved-message')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('金額'), '500');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await screen.findByTestId('saved-message');
+    await user.click(screen.getByRole('link', { name: /ホーム/ }));
+    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    await user.click(screen.getByRole('link', { name: /入力/ }));
+    await screen.findByRole('heading', { level: 1, name: '入力' });
+    expect(screen.queryByTestId('saved-message')).not.toBeInTheDocument();
+  });
+
+  it('タブを押し直さずに 3 件続けて保存でき、取引一覧に 3 件表示される', async () => {
+    await setup();
+    const { user } = await renderApp('/new');
+    await screen.findByRole('button', { name: '食費' });
+    for (const amount of ['100', '200', '300']) {
+      await user.type(screen.getByLabelText('金額'), amount);
+      await user.click(screen.getByRole('button', { name: '保存' }));
+      await waitFor(() =>
+        expect(screen.getByTestId('saved-message')).toHaveTextContent(`¥${amount}`),
+      );
+    }
+    expect(await db.transactions.count()).toBe(3);
+
+    await user.click(screen.getByRole('link', { name: /取引一覧/ }));
+    const list = await screen.findByRole('region', { name: '取引' });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(3));
   });
 });
 
@@ -367,11 +497,11 @@ describe('出費保存時の予算アラート', () => {
     await user.type(screen.getByLabelText('金額'), amount);
     await user.click(await screen.findByRole('button', { name: '外食' }));
     await user.click(screen.getByRole('button', { name: '保存' }));
-    await screen.findByRole('heading', { level: 1, name: 'ホーム' });
+    await screen.findByTestId('saved-message');
     return result;
   }
 
-  it('保存で予算を超えたら、ホームでメッセージを表示する', async () => {
+  it('保存で予算を超えたら、入力画面でメッセージを表示する', async () => {
     await setupBudget('10000', '8000');
     await saveEatOut('3000');
     expect(await screen.findByTestId('budget-alert')).toHaveTextContent(
@@ -390,6 +520,18 @@ describe('出費保存時の予算アラート', () => {
   it('予算内なら表示しない', async () => {
     await setupBudget('10000', '0');
     await saveEatOut('1000');
+    expect(screen.queryByTestId('budget-alert')).not.toBeInTheDocument();
+  });
+
+  it('予算内の出費を続けて保存すると、直前のメッセージは消える', async () => {
+    await setupBudget('10000', '9000');
+    const { user } = await saveEatOut('2000');
+    expect(await screen.findByTestId('budget-alert')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('金額'), '100');
+    await user.click(screen.getByRole('button', { name: '食費' }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(screen.getByTestId('saved-message')).toHaveTextContent('食費'));
     expect(screen.queryByTestId('budget-alert')).not.toBeInTheDocument();
   });
 
