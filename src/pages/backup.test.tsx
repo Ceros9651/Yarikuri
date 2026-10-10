@@ -1,4 +1,4 @@
-import { fireEvent } from '@testing-library/react';
+import { fireEvent, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { exportData, importData } from '../db/backup';
 import { YarikuriDB } from '../db/db';
@@ -6,6 +6,10 @@ import { addAccount, clearBudget, saveTransaction, setBudget } from '../db/repos
 import { ensureSeeded } from '../db/seed';
 import { createBackup, parseBackup } from '../domain/backup';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
+
+/** 設定画面には他にも status があるので、バックアップ欄の中のものを探す */
+const backupStatus = () =>
+  within(screen.getByRole('region', { name: 'バックアップ' })).findByRole('status');
 
 async function populate(target: YarikuriDB = db) {
   await ensureSeeded(target);
@@ -137,7 +141,7 @@ describe('バックアップ画面', () => {
     await renderApp('/settings');
     await chooseFile(backupFile(text));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('バックアップから復元しました');
+    expect(await backupStatus()).toHaveTextContent('バックアップから復元しました');
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('取引4件・予算2件'));
     expect(await exportData()).toEqual(expected);
   });
@@ -156,7 +160,7 @@ describe('バックアップ画面', () => {
     await renderApp('/settings');
     await chooseFile(backupFile(JSON.stringify(v1)));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('バックアップから復元しました');
+    expect(await backupStatus()).toHaveTextContent('バックアップから復元しました');
     const after = await exportData();
     expect(after.transactions).toEqual(data.transactions);
     expect(after.budgets).toEqual([]);
@@ -173,7 +177,7 @@ describe('バックアップ画面', () => {
     await renderApp('/settings');
     await chooseFile(backupFile(JSON.stringify(broken)));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
+    expect(await backupStatus()).toHaveTextContent(
       '読み込めませんでした：存在しない出費カテゴリを参照している予算があります',
     );
     expect(confirm).not.toHaveBeenCalled();
@@ -199,7 +203,7 @@ describe('バックアップ画面', () => {
     await renderApp('/settings');
     await chooseFile(backupFile('{ broken'));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
+    expect(await backupStatus()).toHaveTextContent(
       '読み込めませんでした：JSONとして読み込めないファイルです',
     );
     expect(confirm).not.toHaveBeenCalled();

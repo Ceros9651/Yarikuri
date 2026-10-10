@@ -154,6 +154,66 @@ describe('カテゴリ', () => {
     const id = await repo.addCategory({ kind: 'expense', name: '食費' }, db);
     await expect(repo.renameCategory(id, '食費', db)).resolves.toBeUndefined();
   });
+
+  describe('並べ替え', () => {
+    const namesOf = async (kind: 'expense' | 'income') =>
+      (await db.categories.orderBy('sortOrder').toArray())
+        .filter((c) => c.kind === kind)
+        .map((c) => c.name);
+    const idsByName = async (kind: 'expense' | 'income') => {
+      const list = (await db.categories.orderBy('sortOrder').toArray()).filter(
+        (c) => c.kind === kind,
+      );
+      return new Map(list.map((c) => [c.name, c.id]));
+    };
+
+    beforeEach(async () => {
+      await ensureSeeded(db);
+    });
+
+    it('指定した順に並び、収入カテゴリの順序は変わらない', async () => {
+      const incomeBefore = await db.categories.where('kind').equals('income').toArray();
+      const ids = await idsByName('expense');
+      const order = ['外食', ...DEFAULT_EXPENSE_CATEGORIES.filter((n) => n !== '外食')];
+      await repo.reorderCategories(
+        order.map((n) => ids.get(n)!),
+        db,
+      );
+      expect(await namesOf('expense')).toEqual(order);
+      expect(await db.categories.where('kind').equals('income').toArray()).toEqual(incomeBefore);
+      expect(await namesOf('income')).toEqual(DEFAULT_INCOME_CATEGORIES);
+    });
+
+    it('非表示のカテゴリは再表示すると元の相対位置に戻る', async () => {
+      const ids = await idsByName('expense');
+      await repo.setCategoryHidden(ids.get('Amazon')!, true, db);
+      const visible = DEFAULT_EXPENSE_CATEGORIES.filter((n) => n !== 'Amazon');
+      const order = ['外食', ...visible.filter((n) => n !== '外食')];
+      await repo.reorderCategories(
+        order.map((n) => ids.get(n)!),
+        db,
+      );
+      await repo.setCategoryHidden(ids.get('Amazon')!, false, db);
+      const names = await namesOf('expense');
+      expect(names[0]).toBe('外食');
+      expect(names.indexOf('Amazon')).toBe(names.indexOf('趣味・娯楽') + 1);
+      expect(names.indexOf('衣服')).toBe(names.indexOf('Amazon') + 1);
+    });
+
+    it('収入と出費のカテゴリを混ぜると拒否される', async () => {
+      const expense = await idsByName('expense');
+      const income = await idsByName('income');
+      await expect(
+        repo.reorderCategories([income.get('給与')!, expense.get('食費')!], db),
+      ).rejects.toThrow('混ぜて並べ替えられません');
+    });
+
+    it('存在しないカテゴリは拒否される', async () => {
+      await expect(repo.reorderCategories(['missing'], db)).rejects.toThrow(
+        'カテゴリが見つかりません',
+      );
+    });
+  });
 });
 
 describe('予算', () => {

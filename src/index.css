@@ -511,3 +511,40 @@ h3 {
   flex-shrink: 0;
   padding: 0 8px;
 }
+
+/* カテゴリの並べ替え */
+.list > li.sortable-row {
+  position: relative;
+  justify-content: flex-start;
+  background: var(--surface);
+}
+
+.sortable-row > .truncate,
+.sortable-row > .inline-form {
+  flex: 1;
+}
+
+.list > li.sortable-row.dragging {
+  z-index: 1;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.18);
+  opacity: 0.95;
+}
+
+/* タッチでドラッグしたときに画面がスクロールしないようにする */
+button.drag-handle {
+  flex-shrink: 0;
+  touch-action: none;
+  cursor: grab;
+  border: none;
+  background: none;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 6px;
+  color: var(--text-muted);
+  letter-spacing: -0.2em;
+}
+
+.sortable-row.dragging button.drag-handle {
+  cursor: grabbing;
+}
