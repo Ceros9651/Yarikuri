@@ -87,7 +87,8 @@ describe('口座別残高', () => {
     const rows = within(section)
       .getAllByRole('listitem')
       .map((li) => li.textContent);
-    expect(rows).toEqual(['財布¥0', 'A銀行¥100,000', 'Suica¥2,000', '合計¥102,000']);
+    // 合計は一覧の末尾ではなく見出しの行に出す
+    expect(rows).toEqual(['財布¥0', 'A銀行¥100,000', 'Suica¥2,000']);
     expect(section).not.toHaveTextContent('カード');
   });
 
@@ -122,7 +123,7 @@ describe('口座別残高', () => {
     await setAccountHidden(suica, true);
     await renderHome();
     const section = await screen.findByRole('region', { name: '残高' });
-    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(3));
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
     expect(section).not.toHaveTextContent('Suica');
   });
 });
@@ -154,6 +155,6 @@ describe('カテゴリ別内訳とカード別利用額', () => {
     const rows = within(section)
       .getAllByRole('listitem')
       .map((li) => li.textContent);
-    expect(rows).toEqual(['Aカード¥12,000', 'Bカード¥3,000', '合計¥15,000']);
+    expect(rows).toEqual(['Aカード¥12,000', 'Bカード¥3,000']);
   });
 });

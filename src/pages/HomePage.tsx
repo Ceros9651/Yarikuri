@@ -15,7 +15,7 @@ export function HomePage() {
   if (!data) {
     return (
       <>
-        <h1>ホーム</h1>
+        <h1 className="visually-hidden">ホーム</h1>
         <MonthSwitcher />
       </>
     );
@@ -31,7 +31,8 @@ export function HomePage() {
 
   return (
     <>
-      <h1>ホーム</h1>
+      {/* タブで選択中の画面名と重なるので、見出しは読み上げ用にだけ残す */}
+      <h1 className="visually-hidden">ホーム</h1>
       <MonthSwitcher />
 
       {overBudget.length > 0 && (
@@ -40,29 +41,35 @@ export function HomePage() {
         </p>
       )}
 
-      <section className="summary-grid" aria-label="月の収支">
-        <div className="card">
-          <span className="muted">収入</span>
-          <span className="amount income" data-testid="income">
-            {formatYen(summary.income)}
-          </span>
-        </div>
-        <div className="card">
-          <span className="muted">出費</span>
-          <span className="amount expense" data-testid="expense">
-            {formatYen(summary.expense)}
-          </span>
-        </div>
-        <div className="card">
-          <span className="muted">差額</span>
-          <span className="amount" data-testid="net">
-            {formatYen(summary.net)}
-          </span>
-        </div>
+      {/* いちばん知りたい差額を主数字にし、収入・出費はその内訳として添える */}
+      <section className="month-summary" aria-label="月の収支">
+        <span className="muted">差額</span>
+        <span className={`month-net amount${summary.net < 0 ? ' expense' : ''}`} data-testid="net">
+          {formatYen(summary.net)}
+        </span>
+        <ul className="list month-flow">
+          <li>
+            <span>収入</span>
+            <span className="amount income" data-testid="income">
+              {formatYen(summary.income)}
+            </span>
+          </li>
+          <li>
+            <span>出費</span>
+            <span className="amount expense" data-testid="expense">
+              {formatYen(summary.expense)}
+            </span>
+          </li>
+        </ul>
       </section>
 
-      <section className="card" aria-labelledby="balances-heading">
-        <h2 id="balances-heading">残高</h2>
+      <section className="home-section" aria-labelledby="balances-heading">
+        <div className="section-head">
+          <h2 id="balances-heading">残高</h2>
+          <span className="amount" data-testid="balance-total">
+            {formatYen(totalBalance)}
+          </span>
+        </div>
         <ul className="list">
           {assetAccounts.map((a) => (
             <li key={a.id}>
@@ -70,37 +77,10 @@ export function HomePage() {
               <span className="amount">{formatYen(balances.get(a.id) ?? 0)}</span>
             </li>
           ))}
-          <li className="row-total">
-            <span>合計</span>
-            <span className="amount" data-testid="balance-total">
-              {formatYen(totalBalance)}
-            </span>
-          </li>
         </ul>
       </section>
 
-      <section className="card" aria-labelledby="categories-heading">
-        <h2 id="categories-heading">カテゴリ別の出費</h2>
-        {summary.byCategory.length === 0 ? (
-          <p className="empty">この月の出費はありません</p>
-        ) : (
-          <ul className="list">
-            {summary.byCategory.map((c) => (
-              <li key={c.categoryId} className="bar-row">
-                <span className="truncate">{c.name}</span>
-                <span className="amount">
-                  {formatYen(c.amount)}（{c.percent}%）
-                </span>
-                <span className="bar-track" aria-hidden="true">
-                  <span className="bar-fill" style={{ width: `${c.percent}%`, display: 'block' }} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="card" aria-labelledby="budgets-heading">
+      <section className="home-section" aria-labelledby="budgets-heading">
         <h2 id="budgets-heading">予算</h2>
         {budgetUsages.length === 0 ? (
           <p className="empty">
@@ -142,8 +122,36 @@ export function HomePage() {
         )}
       </section>
 
-      <section className="card" aria-labelledby="cards-heading">
-        <h2 id="cards-heading">カード別の利用額</h2>
+      <section className="home-section" aria-labelledby="categories-heading">
+        <h2 id="categories-heading">カテゴリ別の出費</h2>
+        {summary.byCategory.length === 0 ? (
+          <p className="empty">この月の出費はありません</p>
+        ) : (
+          <ul className="list">
+            {summary.byCategory.map((c) => (
+              <li key={c.categoryId} className="bar-row">
+                <span className="truncate">{c.name}</span>
+                <span className="amount">
+                  {formatYen(c.amount)}（{c.percent}%）
+                </span>
+                <span className="bar-track" aria-hidden="true">
+                  <span className="bar-fill" style={{ width: `${c.percent}%`, display: 'block' }} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="home-section" aria-labelledby="cards-heading">
+        <div className="section-head">
+          <h2 id="cards-heading">カード別の利用額</h2>
+          {summary.byCard.length > 0 && (
+            <span className="amount" data-testid="card-total">
+              {formatYen(summary.cardTotal)}
+            </span>
+          )}
+        </div>
         {summary.byCard.length === 0 ? (
           <p className="empty">この月のカード利用はありません</p>
         ) : (
@@ -154,12 +162,6 @@ export function HomePage() {
                 <span className="amount">{formatYen(c.amount)}</span>
               </li>
             ))}
-            <li className="row-total">
-              <span>合計</span>
-              <span className="amount" data-testid="card-total">
-                {formatYen(summary.cardTotal)}
-              </span>
-            </li>
           </ul>
         )}
       </section>
