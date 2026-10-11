@@ -43,7 +43,7 @@ Playwright のブラウザは利用者の端末とは別なので、IndexedDB �
 
 1. 対象URLを `browser_navigate` で開く（ここでアプリが DB と初期データを作る）。
 2. `seed-sample-data.js` を Read し、先頭のコメント行を除いた関数式（`async () =>` で始まる行から最後の `}` まで。末尾の `;` は除く）をそのまま `browser_evaluate` の `function` に渡して実行する。戻り値に件数（`transactions: 20` など）が入っていれば成功。
-3. もう一度対象URLを `browser_navigate` で開き直す（再読み込み）。
+3. ページを再読み込みする。ハッシュURL（`#/...`）は同じURLへ `browser_navigate` しても再読み込みにならないので、いったん `#` の前にクエリを付けたURL（例: `http://localhost:5173/Yarikuri/?reload=1#/`）を開き、その後で対象URLを開く。画面に取引のデータ（金額や口座名）が出ていることを確かめてから撮る。
 
 空状態そのものが論点になりそうな画面（取引が無いときの一覧など）は、投入前に空状態も撮っておいてよい（`before-empty-mobile.png`）。Playwright は `--isolated` で起動しているので、ブラウザを閉じると投入したデータも消える。
 
