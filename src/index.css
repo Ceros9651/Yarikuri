@@ -93,6 +93,18 @@ textarea {
   background: var(--surface);
 }
 
+/* iOS Safari は日付欄を独自の見た目で描き、固有の最小幅で右にはみ出すため、通常の入力欄にそろえる */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-height: calc(1.5em + 22px);
+}
+
+input[type='date']::-webkit-date-and-time-value {
+  text-align: left;
+}
+
 button {
   cursor: pointer;
   border: 1px solid var(--border);
