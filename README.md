@@ -57,6 +57,21 @@ npm run preview        # ビルド結果の確認（http://localhost:4173/Yariku
 npm run generate-icons # public/icon.svg からアプリアイコンを生成
 ```
 
+### UI レビュー（/ui-review）
+
+Claude Code で、画面の「AI が作ったっぽさ」（角丸カードの多用、飾りの絵文字、グラデーション・影、均一な余白と中央寄せ）を見つけ、実在アプリを参考にした直し方を選択式で相談し、OpenSpec の change として起票できます。
+
+```text
+/ui-review ホーム                          # 画面をレビュー → 選択式で相談 → change（ui-refine-home）を起票
+/ui-review --verify ui-refine-home         # 実装後に Before/After のスクショで確認
+```
+
+- 画面名: ホーム / 取引一覧 / 取引の編集 / 入力 / 設定 / タブバー（`.claude/skills/ui-review/SKILL.md` の画面一覧）
+- スクショは Playwright MCP（`.mcp.json`）で撮ります。初回は Claude Code を再起動して `playwright` サーバーを許可してください。撮影用のブラウザにはサンプルデータが入ります（端末のデータには触れません）
+- 採用した方針は `docs/design-principles.md` に溜まり、新しく画面を作るときにも従います（`CLAUDE.md`）
+- 初回は参考アプリの候補が出るので、選んだものが `.claude/skills/ui-review/references.md` に登録されます
+- 実装は起票された change を使って、いつもの OpenSpec のフローで行います
+
 ### デプロイ
 
 `dev` ブランチに push すると、GitHub Actions（`.github/workflows/deploy.yml`）が lint・テスト・ビルドを行い、GitHub Pages に公開します。初回だけ、リポジトリの Settings → Pages で Source を「GitHub Actions」にしてください。
