@@ -1,6 +1,6 @@
 import { within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addAccount, saveTransaction, setAccountHidden } from '../db/repository';
+import { addAccount, saveTransaction, setAccountHidden, setBudget } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import type { TransactionDraft } from '../domain/validation';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -73,6 +73,25 @@ describe('月の収入・出費・差額', () => {
     await user.click(screen.getByRole('button', { name: '前月' }));
     expect(screen.getByRole('heading', { level: 2, name: '2026年9月' })).toBeInTheDocument();
     expect(screen.getByTestId('expense')).toHaveTextContent('¥1,234');
+  });
+});
+
+describe('セクションの並び順', () => {
+  it('予算超過のアラートの下に、収支・カテゴリ・カード・予算・残高の順で並ぶ', async () => {
+    const { cardA, cat, save } = await setup();
+    await save({ amount: '5000', categoryId: cat('食費') });
+    await save({ amount: '3000', accountId: cardA, categoryId: cat('日用品') });
+    await setBudget(cat('食費'), '2026-10', '1000');
+
+    await renderHome();
+    const alert = await screen.findByTestId('over-budget');
+    const regions = screen.getAllByRole('region');
+    expect(
+      regions.map((r) => r.getAttribute('aria-label') ?? r.querySelector('h2')?.textContent),
+    ).toEqual(['月の収支', 'カテゴリ別の出費', 'カード別の利用額', '予算', '残高']);
+    expect(
+      alert.compareDocumentPosition(regions[0]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 

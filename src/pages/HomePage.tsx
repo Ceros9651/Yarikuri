@@ -63,21 +63,48 @@ export function HomePage() {
         </ul>
       </section>
 
-      <section className="home-section" aria-labelledby="balances-heading">
+      <section className="home-section" aria-labelledby="categories-heading">
+        <h2 id="categories-heading">カテゴリ別の出費</h2>
+        {summary.byCategory.length === 0 ? (
+          <p className="empty">この月の出費はありません</p>
+        ) : (
+          <ul className="list">
+            {summary.byCategory.map((c) => (
+              <li key={c.categoryId} className="bar-row">
+                <span className="truncate">{c.name}</span>
+                <span className="amount">
+                  {formatYen(c.amount)}（{c.percent}%）
+                </span>
+                <span className="bar-track" aria-hidden="true">
+                  <span className="bar-fill" style={{ width: `${c.percent}%`, display: 'block' }} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="home-section" aria-labelledby="cards-heading">
         <div className="section-head">
-          <h2 id="balances-heading">残高</h2>
-          <span className="amount" data-testid="balance-total">
-            {formatYen(totalBalance)}
-          </span>
+          <h2 id="cards-heading">カード別の利用額</h2>
+          {summary.byCard.length > 0 && (
+            <span className="amount" data-testid="card-total">
+              {formatYen(summary.cardTotal)}
+            </span>
+          )}
         </div>
-        <ul className="list">
-          {assetAccounts.map((a) => (
-            <li key={a.id}>
-              <span className="truncate">{a.name}</span>
-              <span className="amount">{formatYen(balances.get(a.id) ?? 0)}</span>
-            </li>
-          ))}
-        </ul>
+        {summary.byCard.length === 0 ? (
+          <p className="empty">この月のカード利用はありません</p>
+        ) : (
+          <ul className="list">
+            {summary.byCard.map((c) => (
+              <li key={c.accountId}>
+                <span className="truncate">{c.name}</span>
+                <span className="amount">{formatYen(c.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="home-section" aria-labelledby="budgets-heading">
@@ -122,48 +149,21 @@ export function HomePage() {
         )}
       </section>
 
-      <section className="home-section" aria-labelledby="categories-heading">
-        <h2 id="categories-heading">カテゴリ別の出費</h2>
-        {summary.byCategory.length === 0 ? (
-          <p className="empty">この月の出費はありません</p>
-        ) : (
-          <ul className="list">
-            {summary.byCategory.map((c) => (
-              <li key={c.categoryId} className="bar-row">
-                <span className="truncate">{c.name}</span>
-                <span className="amount">
-                  {formatYen(c.amount)}（{c.percent}%）
-                </span>
-                <span className="bar-track" aria-hidden="true">
-                  <span className="bar-fill" style={{ width: `${c.percent}%`, display: 'block' }} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="home-section" aria-labelledby="cards-heading">
+      <section className="home-section" aria-labelledby="balances-heading">
         <div className="section-head">
-          <h2 id="cards-heading">カード別の利用額</h2>
-          {summary.byCard.length > 0 && (
-            <span className="amount" data-testid="card-total">
-              {formatYen(summary.cardTotal)}
-            </span>
-          )}
+          <h2 id="balances-heading">残高</h2>
+          <span className="amount" data-testid="balance-total">
+            {formatYen(totalBalance)}
+          </span>
         </div>
-        {summary.byCard.length === 0 ? (
-          <p className="empty">この月のカード利用はありません</p>
-        ) : (
-          <ul className="list">
-            {summary.byCard.map((c) => (
-              <li key={c.accountId}>
-                <span className="truncate">{c.name}</span>
-                <span className="amount">{formatYen(c.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ul className="list">
+          {assetAccounts.map((a) => (
+            <li key={a.id}>
+              <span className="truncate">{a.name}</span>
+              <span className="amount">{formatYen(balances.get(a.id) ?? 0)}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {accounts.length > 0 && transactions.length === 0 && (
