@@ -11,6 +11,7 @@ import { computeBalance } from '../domain/balance';
 import { todayString } from '../domain/date';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
 import { ensureSeeded } from '../db/seed';
+import { makeTx } from '../test/factories';
 
 async function setup() {
   await ensureSeeded();
@@ -406,6 +407,133 @@ describe('取引一覧', () => {
     await user.click(screen.getByRole('button', { name: '前月' }));
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1));
     expect(within(list).getByRole('listitem')).toHaveTextContent('09/30');
+  });
+});
+
+describe('取引一覧のカテゴリでの絞り込み', () => {
+  async function setupCategories() {
+    const ids = await setup();
+    const save = (type: 'expense' | 'income', date: string, amount: string, categoryId: string) =>
+      saveTransaction(
+        { type, date, amount, accountId: ids.wallet, toAccountId: '', categoryId },
+        '',
+      );
+    await save('expense', '2026-09-20', '900', ids.cat('食費'));
+    await save('expense', '2026-10-03', '300', ids.cat('食費'));
+    await save('expense', '2026-10-08', '500', ids.cat('食費'));
+    await save('expense', '2026-10-05', '700', ids.cat('日用品'));
+    // 入力画面からはカテゴリなしで保存できないので、古いデータを想定して直接入れる
+    await db.transactions.add(
+      makeTx({ type: 'expense', date: '2026-10-06', amount: 111, accountId: ids.wallet }),
+    );
+    await save('income', '2026-10-25', '250000', ids.cat('給与', 'income'));
+    return ids;
+  }
+
+  /** 今日を 2026-10-10 にして取引一覧を開く */
+  async function renderList(path: string) {
+    vi.useFakeTimers({ now: new Date(2026, 9, 10), toFake: ['Date'] });
+    const result = await renderApp(path);
+    vi.useRealTimers();
+    return result;
+  }
+
+  const rowTexts = () =>
+    within(screen.getByRole('region', { name: '取引' }))
+      .queryAllByRole('listitem')
+      .map((li) => li.textContent ?? '');
+
+  it('指定したカテゴリの出費だけを新しい順に表示する', async () => {
+    const { cat } = await setupCategories();
+    await renderList(`/transactions?category=${cat('食費')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    expect(rowTexts()[0]).toContain('10/08');
+    expect(rowTexts()[1]).toContain('10/03');
+    expect(screen.getByText('食費の出費')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '絞り込みを解除' })).toBeInTheDocument();
+  });
+
+  it('未分類はカテゴリのない出費だけを表示する', async () => {
+    await setupCategories();
+    await renderList('/transactions?category=none');
+    await waitFor(() => expect(rowTexts()).toHaveLength(1));
+    expect(rowTexts()[0]).toContain('10/06');
+    expect(screen.getByText('未分類の出費')).toBeInTheDocument();
+  });
+
+  it('非表示にしたカテゴリでも絞り込める', async () => {
+    const { cat } = await setupCategories();
+    await setCategoryHidden(cat('日用品'), true);
+    await renderList(`/transactions?category=${cat('日用品')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(1));
+    expect(screen.getByText('日用品の出費')).toBeInTheDocument();
+  });
+
+  it('解除すると同じ月のすべての取引を表示する', async () => {
+    const { cat } = await setupCategories();
+    const { user } = await renderList(`/transactions?category=${cat('食費')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: '絞り込みを解除' }));
+    await waitFor(() => expect(rowTexts()).toHaveLength(5));
+    expect(screen.queryByText('食費の出費')).not.toBeInTheDocument();
+  });
+
+  it('月を切り替えても絞り込みが残る', async () => {
+    const { cat } = await setupCategories();
+    const { user } = await renderList(`/transactions?category=${cat('食費')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: '前月' }));
+    await waitFor(() => expect(rowTexts()).toHaveLength(1));
+    expect(rowTexts()[0]).toContain('09/20');
+    expect(screen.getByText('食費の出費')).toBeInTheDocument();
+  });
+
+  it('出費のない月でも絞り込みの表示と解除の操作は残る', async () => {
+    const { cat } = await setupCategories();
+    const { user } = await renderList(`/transactions?category=${cat('日用品')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: '前月' }));
+    expect(await screen.findByText('この月の取引はありません')).toBeInTheDocument();
+    expect(screen.getByText('日用品の出費')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '絞り込みを解除' })).toBeInTheDocument();
+  });
+
+  it('絞り込んだ一覧から編集して保存すると、同じ絞り込みの一覧に戻る', async () => {
+    const { cat } = await setupCategories();
+    const { user } = await renderList(`/transactions?category=${cat('食費')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: /10\/08/ }));
+    const amount = await screen.findByLabelText('金額');
+    await user.clear(amount);
+    await user.type(amount, '1200');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await screen.findByRole('heading', { level: 1, name: '取引一覧' });
+    expect(await screen.findByText('食費の出費')).toBeInTheDocument();
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    expect(rowTexts()[0]).toContain('1,200');
+  });
+
+  it('絞り込んだ一覧から削除しても、同じ絞り込みの一覧に戻る', async () => {
+    const { cat } = await setupCategories();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { user } = await renderList(`/transactions?category=${cat('食費')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    await user.click(screen.getByRole('button', { name: /10\/08/ }));
+    await user.click(await screen.findByRole('button', { name: 'この取引を削除' }));
+
+    await screen.findByRole('heading', { level: 1, name: '取引一覧' });
+    expect(await screen.findByText('食費の出費')).toBeInTheDocument();
+    await waitFor(() => expect(rowTexts()).toHaveLength(1));
+  });
+
+  it('下部タブの「取引一覧」からは絞り込みなしで開く', async () => {
+    const { cat } = await setupCategories();
+    const { user } = await renderList(`/transactions?category=${cat('食費')}`);
+    await waitFor(() => expect(rowTexts()).toHaveLength(2));
+    await user.click(screen.getByRole('link', { name: /取引一覧/ }));
+    await waitFor(() => expect(rowTexts()).toHaveLength(5));
+    expect(screen.queryByText('食費の出費')).not.toBeInTheDocument();
   });
 });
 

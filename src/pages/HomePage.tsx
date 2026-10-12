@@ -8,6 +8,7 @@ import { formatYen } from '../domain/format';
 import { summarizeMonth } from '../domain/summary';
 import { isAssetAccount } from '../domain/types';
 import { useAllData } from '../hooks/useData';
+import { UNCATEGORIZED } from './TransactionsPage';
 
 export function HomePage() {
   const { month } = useMonth();
@@ -70,14 +71,23 @@ export function HomePage() {
         ) : (
           <ul className="list">
             {summary.byCategory.map((c) => (
-              <li key={c.categoryId} className="bar-row">
-                <span className="truncate">{c.name}</span>
-                <span className="amount">
-                  {formatYen(c.amount)}（{c.percent}%）
-                </span>
-                <span className="bar-track" aria-hidden="true">
-                  <span className="bar-fill" style={{ width: `${c.percent}%`, display: 'block' }} />
-                </span>
+              <li key={c.categoryId} className="bar-link-row">
+                {/* カテゴリの中身を確かめられるよう、そのカテゴリで絞り込んだ取引一覧へ移る */}
+                <Link
+                  className="bar-link"
+                  to={`/transactions?category=${c.categoryId || UNCATEGORIZED}`}
+                >
+                  <span className="truncate">{c.name}</span>
+                  <span className="amount">
+                    {formatYen(c.amount)}（{c.percent}%）
+                  </span>
+                  <span className="bar-track" aria-hidden="true">
+                    <span
+                      className="bar-fill"
+                      style={{ width: `${c.percent}%`, display: 'block' }}
+                    />
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>

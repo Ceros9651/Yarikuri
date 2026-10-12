@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addAccount, saveTransaction, setAccountHidden, setBudget } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import type { TransactionDraft } from '../domain/validation';
+import { makeTx } from '../test/factories';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
 
 async function setup() {
@@ -160,6 +161,41 @@ describe('カテゴリ別内訳とカード別利用額', () => {
       .getAllByRole('listitem')
       .map((li) => li.textContent);
     expect(rows).toEqual(['食費¥30,000（75%）', '日用品¥10,000（25%）']);
+  });
+
+  it('カテゴリの行を押すと、同じ月のそのカテゴリの出費だけの取引一覧が開く', async () => {
+    const { cat, save } = await setup();
+    await save({ amount: '30000', categoryId: cat('食費') });
+    await save({ amount: '800', categoryId: cat('食費'), date: '2026-10-03' });
+    await save({ amount: '10000', categoryId: cat('日用品') });
+    await save({ amount: '5000', categoryId: cat('食費'), date: '2026-09-30' });
+
+    const { user } = await renderHome();
+    const section = await screen.findByRole('region', { name: 'カテゴリ別の出費' });
+    await user.click(await within(section).findByRole('link', { name: /食費/ }));
+
+    await screen.findByRole('heading', { level: 1, name: '取引一覧' });
+    expect(await screen.findByText('食費の出費')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /2026年10月/ })).toBeInTheDocument();
+    const list = screen.getByRole('region', { name: '取引' });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
+    expect(within(list).queryByText(/10,000/)).not.toBeInTheDocument();
+  });
+
+  it('未分類の行からはカテゴリのない出費だけの取引一覧が開く', async () => {
+    const { wallet, cat, save } = await setup();
+    await save({ amount: '30000', categoryId: cat('食費') });
+    // 入力画面からはカテゴリなしで保存できないので、古いデータを想定して直接入れる
+    await db.transactions.add(makeTx({ type: 'expense', amount: 700, accountId: wallet }));
+
+    const { user } = await renderHome();
+    const section = await screen.findByRole('region', { name: 'カテゴリ別の出費' });
+    await user.click(await within(section).findByRole('link', { name: /未分類/ }));
+
+    expect(await screen.findByText('未分類の出費')).toBeInTheDocument();
+    const list = screen.getByRole('region', { name: '取引' });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1));
+    expect(within(list).getByRole('listitem')).toHaveTextContent('¥700');
   });
 
   it('カードごとの利用額と合計を表示し、非表示のカードも含める', async () => {
