@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { TransactionForm } from '../components/TransactionForm';
 import { db } from '../db/db';
 import { deleteTransaction } from '../db/repository';
@@ -9,6 +9,13 @@ import { useAccounts, useTransactions } from '../hooks/useData';
 export function EditTransactionPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  // 取引一覧から開いたときは、その絞り込みのまま一覧へ戻す
+  const requested = (location.state as { returnTo?: unknown } | null)?.returnTo;
+  const returnTo =
+    typeof requested === 'string' && requested.startsWith('/transactions')
+      ? requested
+      : '/transactions';
   // 読み込み中は undefined、見つからなければ null
   const tx = useLiveQuery(async () => (await db.transactions.get(id)) ?? null, [id]);
   const accounts = useAccounts();
@@ -35,7 +42,7 @@ export function EditTransactionPage() {
   async function handleDelete() {
     if (!window.confirm('この取引を削除しますか？')) return;
     await deleteTransaction(id);
-    navigate('/transactions');
+    navigate(returnTo);
   }
 
   return (
@@ -45,7 +52,7 @@ export function EditTransactionPage() {
         key={tx.id}
         initial={tx}
         initialAmount={initialAmount}
-        onSaved={(_id, budgetAlert) => navigate('/transactions', { state: { budgetAlert } })}
+        onSaved={(_id, budgetAlert) => navigate(returnTo, { state: { budgetAlert } })}
       />
       <div className="form-actions">
         <button type="button" className="danger" onClick={handleDelete}>
