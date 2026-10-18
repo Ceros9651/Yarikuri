@@ -28,12 +28,51 @@ function matchesCategory(tx: Transaction, category: string | null): boolean {
   return category === UNCATEGORIZED ? !tx.categoryId : tx.categoryId === category;
 }
 
+/** 出費を支払元の口座で絞り込む。`account` が未指定なら絞り込まない */
+function matchesAccount(tx: Transaction, account: string | null): boolean {
+  if (account === null) return true;
+  return tx.type === 'expense' && tx.accountId === account;
+}
+
+interface FilterChipsProps {
+  label: string;
+  options: { id: string; name: string }[];
+  selected: string | null;
+  onSelect: (id: string | null) => void;
+}
+
+/** 先頭に「すべて」を置いた絞り込みの選択肢 */
+function FilterChips({ label, options, selected, onSelect }: FilterChipsProps) {
+  return (
+    <div className="field">
+      <span>{label}</span>
+      <div className="chips" role="group" aria-label={label}>
+        <button type="button" aria-pressed={selected === null} onClick={() => onSelect(null)}>
+          すべて
+        </button>
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            aria-pressed={selected === o.id}
+            onClick={() => onSelect(o.id)}
+          >
+            {o.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TransactionsPage() {
   const { month } = useMonth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const category = searchParams.get('category');
+  const account = searchParams.get('account');
+  const filtered = category !== null || account !== null;
   const data = useAllData();
   const accounts = data?.accounts ?? [];
   const categories = data?.categories ?? [];
@@ -42,31 +81,63 @@ export function TransactionsPage() {
   const accountName = (id?: string) => accounts.find((a) => a.id === id)?.name ?? '';
   const categoryName = (id?: string) => categories.find((c) => c.id === id)?.name ?? '未分類';
 
-  const rows = (transactions ?? [])
-    .filter((tx) => tx.date.startsWith(`${month}-`) && matchesCategory(tx, category))
+  const monthTransactions = (transactions ?? []).filter((tx) => tx.date.startsWith(`${month}-`));
+  const rows = monthTransactions
+    .filter((tx) => matchesCategory(tx, category) && matchesAccount(tx, account))
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+
+  // 非表示のカテゴリ・口座も、それで絞り込んでいるあいだは選択肢に残す
+  const categoryOptions = categories.filter(
+    (c) => c.kind === 'expense' && (!c.hidden || c.id === category),
+  );
+  const hasUncategorized = monthTransactions.some((tx) => tx.type === 'expense' && !tx.categoryId);
+  const categoryChips = [
+    ...categoryOptions,
+    ...(hasUncategorized || category === UNCATEGORIZED
+      ? [{ id: UNCATEGORIZED, name: '未分類' }]
+      : []),
+  ];
+  const accountChips = accounts.filter((a) => !a.hidden || a.id === account);
+
+  /** もう一方の条件は残したまま、押した条件だけを変える */
+  const setFilter = (key: 'category' | 'account', value: string | null) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === null) next.delete(key);
+        else next.set(key, value);
+        return next;
+      },
+      // チップを押すたびに履歴を増やさず、戻る操作で前の画面へ戻れるようにする
+      { replace: true },
+    );
 
   return (
     <>
       <h1>取引一覧</h1>
       <MonthSwitcher />
-      {/* カテゴリを読み込む前に「未分類」と出さないよう、読み込み後に表示する */}
-      {category !== null && data && (
-        <div className="filter-bar">
-          <span className="truncate">
-            {category === UNCATEGORIZED ? '未分類' : categoryName(category)}の出費
-          </span>
-          <button
-            type="button"
-            className="link"
-            onClick={() => setSearchParams({}, { replace: true })}
-          >
-            絞り込みを解除
-          </button>
+      {data && (
+        <div className="tx-filters">
+          <FilterChips
+            label="カテゴリ"
+            options={categoryChips}
+            selected={category}
+            onSelect={(id) => setFilter('category', id)}
+          />
+          <FilterChips
+            label="支払元"
+            options={accountChips}
+            selected={account}
+            onSelect={(id) => setFilter('account', id)}
+          />
         </div>
       )}
       <section className="card" aria-label="取引">
-        {transactions && rows.length === 0 && <p className="empty">この月の取引はありません</p>}
+        {transactions && rows.length === 0 && (
+          <p className="empty">
+            {filtered ? '条件に合う出費はありません' : 'この月の取引はありません'}
+          </p>
+        )}
         <ul className="list">
           {rows.map((tx) => {
             const amount = signedAmount(tx);
