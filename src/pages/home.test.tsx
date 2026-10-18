@@ -175,7 +175,11 @@ describe('カテゴリ別内訳とカード別利用額', () => {
     await user.click(await within(section).findByRole('link', { name: /食費/ }));
 
     await screen.findByRole('heading', { level: 1, name: '取引一覧' });
-    expect(await screen.findByText('食費の出費')).toBeInTheDocument();
+    const categoryChips = await screen.findByRole('group', { name: 'カテゴリ' });
+    expect(within(categoryChips).getByRole('button', { name: '食費' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     expect(screen.getByRole('heading', { level: 2, name: /2026年10月/ })).toBeInTheDocument();
     const list = screen.getByRole('region', { name: '取引' });
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
@@ -192,7 +196,11 @@ describe('カテゴリ別内訳とカード別利用額', () => {
     const section = await screen.findByRole('region', { name: 'カテゴリ別の出費' });
     await user.click(await within(section).findByRole('link', { name: /未分類/ }));
 
-    expect(await screen.findByText('未分類の出費')).toBeInTheDocument();
+    const categoryChips = await screen.findByRole('group', { name: 'カテゴリ' });
+    expect(within(categoryChips).getByRole('button', { name: '未分類' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
     const list = screen.getByRole('region', { name: '取引' });
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(1));
     expect(within(list).getByRole('listitem')).toHaveTextContent('¥700');

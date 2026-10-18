@@ -634,16 +634,11 @@ button.drag-handle > svg {
   cursor: grabbing;
 }
 
-/* 取引一覧の絞り込み中の表示。塊にせず、月の切り替えの下の1行にとどめる */
-.filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+/* 取引一覧の絞り込みの選択肢。カードで囲まず、一覧とは余白で区切る */
+.tx-filters {
+  margin-bottom: 20px;
 }
 
-.filter-bar > button {
-  flex-shrink: 0;
-  padding: 4px 0 4px 8px;
+.tx-filters .field:last-child {
+  margin-bottom: 0;
 }
