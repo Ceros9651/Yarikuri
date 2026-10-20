@@ -3,8 +3,8 @@
 ## 1. Firebase の準備と iPhone でのサインインの確認
 
 - [ ] 1.1 Firebase コンソールで Yarikuri 用のプロジェクトを Spark プラン（支払い方法なし）で作り、Firestore を本番モード（`asia-northeast1`）で有効化、Authentication で Google を有効化、承認済みドメインに `ceros9651.github.io` を追加、ウェブアプリを登録して設定値を控える（ユーザーの手作業。設定値が4つそろったことで完了とする）
-- [ ] 1.2 `npm install firebase` を行い、`.env.example`（`VITE_FIREBASE_API_KEY` / `AUTH_DOMAIN` / `PROJECT_ID` / `APP_ID` の項目名だけ）を追加し、`.github/workflows/deploy.yml` の build ステップに Jisaku-Jira と同じ `env: VITE_FIREBASE_*: ${{ vars.VITE_FIREBASE_* }}` を足す。GitHub の Variables に4つの値を登録してもらい、`npm run build` が通ることを確認する
-- [ ] 1.3 `src/sync/firebase.ts` に `firebaseConfigFromEnv`（1つでも欠けたら null）と、`initializeAuth`（`indexedDBLocalPersistence` + `browserPopupRedirectResolver`）・`signInWithPopup(GoogleAuthProvider)`・`signOut`・`onAuthStateChanged` を包む `SyncAuth` の実装を作り、`firebaseConfigFromEnv` のテストを足して `npm test` で通ることを確認する
+- [x] 1.2 `npm install firebase` を行い、`.env.example`（`VITE_FIREBASE_API_KEY` / `AUTH_DOMAIN` / `PROJECT_ID` / `APP_ID` の項目名だけ）を追加し、`.github/workflows/deploy.yml` の build ステップに Jisaku-Jira と同じ `env: VITE_FIREBASE_*: ${{ vars.VITE_FIREBASE_* }}` を足す。GitHub の Variables に4つの値を登録してもらい、`npm run build` が通ることを確認する
+- [x] 1.3 `src/sync/firebase.ts` に `firebaseConfigFromEnv`（1つでも欠けたら null）と、`initializeAuth`（`indexedDBLocalPersistence` + `browserPopupRedirectResolver`）・`signInWithPopup(GoogleAuthProvider)`・`signOut`・`onAuthStateChanged` を包む `SyncAuth` の実装を作り、`firebaseConfigFromEnv` のテストを足して `npm test` で通ることを確認する
 - [ ] 1.4 （確認用・後で 6.1 の UI に置き換える）設定画面の末尾に仮の「Google でサインイン」ボタンとメールアドレスの表示を置いて GitHub Pages に出し、iPhone のホーム画面から起動したアプリと PC の Chrome でサインインでき、アプリを閉じて開き直してもサインインが残ることを実機で確かめる。iPhone でサインインの結果が戻らなければ、ここで作業を止め、design.md の Risks の代替案（Firebase Hosting への移行）をユーザーに相談する
 
 ## 2. Firestore のルール

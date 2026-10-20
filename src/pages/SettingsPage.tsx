@@ -2,6 +2,7 @@ import { AccountsSection } from '../components/settings/AccountsSection';
 import { BackupSection } from '../components/settings/BackupSection';
 import { BudgetsSection } from '../components/settings/BudgetsSection';
 import { CategoriesSection } from '../components/settings/CategoriesSection';
+import { SignInCheck } from '../components/settings/SignInCheck';
 
 export function SettingsPage() {
   return (
@@ -11,6 +12,7 @@ export function SettingsPage() {
       <CategoriesSection />
       <BudgetsSection />
       <BackupSection />
+      <SignInCheck />
     </>
   );
 }
