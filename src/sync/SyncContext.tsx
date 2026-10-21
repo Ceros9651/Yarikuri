@@ -51,6 +51,11 @@ export interface SyncState {
   /** 初めてサインインした端末で、端末のデータを置き換えてよいかの確認を待っている */
   replacePrompt: { transactions: number } | null;
   answerReplace(ok: boolean): void;
+  /**
+   * サインインの前に Firebase を読み込んで準備しておく。iPhone の Safari はボタンを押した直後にしか
+   * ポップアップを開かせないため、押してから読み込むと Google の画面が開かない
+   */
+  prepare(): void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
 }
@@ -90,8 +95,8 @@ function useOnline(): boolean {
 }
 
 /**
- * 端末間の同期の状態を持つ。サインインしていない端末では Firebase を読み込まない
- * （起動時は同期したことのある端末だけ、それ以外は「Google でサインイン」を押したときに読み込む）
+ * 端末間の同期の状態を持つ。サインインしていない端末では、設定画面の同期の欄を開くまで Firebase を
+ * 読み込まない（起動時に読み込むのは同期したことのある端末だけ）。家計簿のデータを送るのはサインイン後だけ
  */
 export function SyncProvider({
   children,
@@ -112,9 +117,17 @@ export function SyncProvider({
   const lastSyncedAt = useLiveQuery(async () => (await db.meta.get('lastSyncedAt'))?.value, [db]);
 
   const services = useCallback(() => {
-    servicesRef.current ??= loadServices();
+    servicesRef.current ??= loadServices().catch((e: unknown) => {
+      // 読み込みに失敗したら、次に呼ばれたときに読み込み直す
+      servicesRef.current = null;
+      throw e;
+    });
     return servicesRef.current;
   }, [loadServices]);
+
+  const prepare = useCallback(() => {
+    services().catch((e: unknown) => console.warn('同期の準備に失敗しました', e));
+  }, [services]);
 
   const startEngine = useCallback(
     (s: SyncServices, user: SyncUser) => {
@@ -250,6 +263,7 @@ export function SyncProvider({
     message,
     replacePrompt,
     answerReplace,
+    prepare,
     signIn,
     signOut,
   };

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { UNCONFIGURED_MESSAGE } from '../../sync/config';
 import type { SyncError } from '../../sync/remote';
 import { useSync } from '../../sync/SyncContext';
@@ -54,6 +54,11 @@ function ReplacePrompt({ transactions }: { transactions: number }) {
 
 export function SyncSection() {
   const sync = useSync();
+  const { status, configured, prepare } = sync;
+
+  useEffect(() => {
+    if (status === 'signedOut' && configured) prepare();
+  }, [status, configured, prepare]);
 
   let body;
   if (sync.status === 'signedOut') {

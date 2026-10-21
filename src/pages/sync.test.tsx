@@ -82,10 +82,24 @@ function goOffline() {
 }
 
 describe('未サインイン', () => {
-  it('説明と「Google でサインイン」を出し、Firebase は読み込まない', async () => {
+  it('説明と「Google でサインイン」を出し、押す前に Firebase を準備しておく', async () => {
+    const signIn = vi.spyOn(auth, 'signIn');
     await renderApp('/settings', options());
     expect(inSection().getByText(/同じ Google アカウントでサインインした端末/)).toBeInTheDocument();
     expect(inSection().getByRole('button', { name: 'Google でサインイン' })).toBeEnabled();
+    // iPhone はボタンを押した直後にしかポップアップを開かせないため、押す前に読み込みを済ませる
+    await waitFor(() => expect(loadServices).toHaveBeenCalledOnce());
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it('設定画面を開かなければ Firebase を読み込まない', async () => {
+    await renderApp('/', options());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(loadServices).not.toHaveBeenCalled();
+  });
+
+  it('接続設定の無いビルドでは設定画面を開いても Firebase を読み込まない', async () => {
+    await renderApp('/settings', { loadServices, configured: false });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(loadServices).not.toHaveBeenCalled();
   });
