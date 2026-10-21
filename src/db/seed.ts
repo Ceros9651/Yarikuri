@@ -1,4 +1,5 @@
 import type { Account, Category, CategoryKind } from '../domain/types';
+import { markDirty } from '../sync/docs';
 import { db as defaultDb, type YarikuriDB } from './db';
 
 export const DEFAULT_EXPENSE_CATEGORIES = [
@@ -27,7 +28,7 @@ function defaultCategories(kind: CategoryKind, names: string[]): Category[] {
 
 /** 初回起動時だけ既定の「財布」口座と初期カテゴリを入れる。何度呼んでも重複しない */
 export async function ensureSeeded(db: YarikuriDB = defaultDb): Promise<void> {
-  await db.transaction('rw', db.accounts, db.categories, db.meta, async () => {
+  await db.transaction('rw', db.accounts, db.categories, db.meta, db.outbox, async () => {
     if (await db.meta.get('seeded')) return;
     const wallet: Account = {
       id: crypto.randomUUID(),
@@ -38,12 +39,21 @@ export async function ensureSeeded(db: YarikuriDB = defaultDb): Promise<void> {
       sortOrder: 0,
       createdAt: new Date().toISOString(),
     };
-    if ((await db.accounts.count()) === 0) await db.accounts.add(wallet);
+    if ((await db.accounts.count()) === 0) {
+      await db.accounts.add(wallet);
+      await markDirty(db, 'accounts', [wallet.id]);
+    }
     if ((await db.categories.count()) === 0) {
-      await db.categories.bulkAdd([
+      const categories = [
         ...defaultCategories('expense', DEFAULT_EXPENSE_CATEGORIES),
         ...defaultCategories('income', DEFAULT_INCOME_CATEGORIES),
-      ]);
+      ];
+      await db.categories.bulkAdd(categories);
+      await markDirty(
+        db,
+        'categories',
+        categories.map((c) => c.id),
+      );
     }
     await db.meta.put({ key: 'seeded', value: new Date().toISOString() });
   });

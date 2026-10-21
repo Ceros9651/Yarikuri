@@ -36,6 +36,7 @@ describe('スキーマ', () => {
       'budgets',
       'categories',
       'meta',
+      'outbox',
       'transactions',
     ]);
   });
@@ -66,6 +67,29 @@ describe('スキーマ', () => {
       expect(await upgraded.budgets.toArray()).toEqual([
         { categoryId: 'c1', month: '2026-10', amount: 40_000 },
       ]);
+    } finally {
+      await upgraded.delete();
+    }
+  });
+  it('version 2 の DB を開き直すと既存データが残り、空の outbox が使える', async () => {
+    const name = `test-upgrade-${++n}`;
+    const old = new Dexie(name);
+    old.version(2).stores({
+      accounts: 'id, type, sortOrder',
+      categories: 'id, kind, sortOrder',
+      transactions: 'id, date, accountId, toAccountId, categoryId',
+      meta: 'key',
+      budgets: '[categoryId+month], categoryId',
+    });
+    await old.table('budgets').add({ categoryId: 'c1', month: '2026-10', amount: 40_000 });
+    old.close();
+
+    const upgraded = new YarikuriDB(name);
+    try {
+      expect(await upgraded.budgets.get(['c1', '2026-10'])).toMatchObject({ amount: 40_000 });
+      expect(await upgraded.outbox.count()).toBe(0);
+      await upgraded.outbox.put({ table: 'budgets', docId: 'c1__2026-10', token: 't' });
+      expect(await upgraded.outbox.get(['budgets', 'c1__2026-10'])).toMatchObject({ token: 't' });
     } finally {
       await upgraded.delete();
     }
@@ -311,5 +335,94 @@ describe('取引', () => {
     expect((await db.transactions.get(id))?.amount).toBe(-300);
     const account = (await db.accounts.get(wallet))!;
     expect(computeBalance(account, await db.transactions.toArray())).toBe(5_000);
+  });
+});
+
+describe('送れていない変更の記録（outbox）', () => {
+  const outbox = async () => (await db.outbox.toArray()).map((e) => `${e.table}/${e.docId}`).sort();
+
+  async function seeded() {
+    await ensureSeeded(db);
+    await db.outbox.clear();
+    const wallet = (await db.accounts.toArray())[0].id;
+    const food = (await db.categories.toArray()).find((c) => c.name === '食費')!.id;
+    return { wallet, food };
+  }
+
+  it('初期データの投入で「財布」と初期カテゴリが積まれる', async () => {
+    await ensureSeeded(db);
+    const entries = await outbox();
+    expect(entries.filter((e) => e.startsWith('accounts/'))).toHaveLength(1);
+    expect(entries.filter((e) => e.startsWith('categories/'))).toHaveLength(
+      DEFAULT_EXPENSE_CATEGORIES.length + DEFAULT_INCOME_CATEGORIES.length,
+    );
+  });
+
+  it('口座の追加・変更・非表示で、その口座が1件積まれる', async () => {
+    await seeded();
+    const bank = await repo.addAccount({ name: 'A銀行', type: 'bank' }, db);
+    await repo.updateAccount(bank, { name: 'B銀行', initialBalance: 100 }, db);
+    await repo.setAccountHidden(bank, true, db);
+    expect(await outbox()).toEqual([`accounts/${bank}`]);
+  });
+
+  it('カテゴリの追加・名前変更・非表示・並べ替えで、そのカテゴリが積まれる', async () => {
+    await seeded();
+    const added = await repo.addCategory({ kind: 'expense', name: '医療' }, db);
+    await repo.renameCategory(added, '病院', db);
+    await repo.setCategoryHidden(added, true, db);
+    expect(await outbox()).toEqual([`categories/${added}`]);
+
+    await db.outbox.clear();
+    const expense = await db.categories.where('kind').equals('expense').sortBy('sortOrder');
+    const [a, b] = expense;
+    await repo.reorderCategories([b.id, a.id], db);
+    expect(await outbox()).toEqual([`categories/${a.id}`, `categories/${b.id}`].sort());
+  });
+
+  it('予算の設定・解除で、その月の予算が積まれる', async () => {
+    const { food } = await seeded();
+    await repo.setBudget(food, '2026-10', '40000', db);
+    await repo.clearBudget(food, '2026-11', db);
+    expect(await outbox()).toEqual([`budgets/${food}__2026-10`, `budgets/${food}__2026-11`]);
+  });
+
+  it('同じ取引を2回保存しても1件で、token が変わる', async () => {
+    const { wallet, food } = await seeded();
+    const id = await repo.saveTransaction(
+      draft({ accountId: wallet, categoryId: food }),
+      '',
+      undefined,
+      db,
+    );
+    const first = await db.outbox.get(['transactions', id]);
+    await repo.saveTransaction(
+      draft({ accountId: wallet, categoryId: food, amount: '900' }),
+      '',
+      id,
+      db,
+    );
+    const second = await db.outbox.get(['transactions', id]);
+    expect(await outbox()).toEqual([`transactions/${id}`]);
+    expect(second!.token).not.toBe(first!.token);
+  });
+
+  it('取引を削除しても outbox に残る', async () => {
+    const { wallet, food } = await seeded();
+    const id = await repo.saveTransaction(
+      draft({ accountId: wallet, categoryId: food }),
+      '',
+      undefined,
+      db,
+    );
+    await repo.deleteTransaction(id, db);
+    expect(await db.transactions.get(id)).toBeUndefined();
+    expect(await outbox()).toEqual([`transactions/${id}`]);
+  });
+
+  it('入力エラーで保存しなかったときは積まない', async () => {
+    await seeded();
+    await expect(repo.saveTransaction(draft({}), '', undefined, db)).rejects.toThrow();
+    expect(await outbox()).toEqual([]);
   });
 });

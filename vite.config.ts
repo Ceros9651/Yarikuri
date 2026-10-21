@@ -43,5 +43,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // .env.local に接続設定があっても、テストは本物の Firebase につながず偽物の窓口で動かす
+    env: {
+      VITE_FIREBASE_API_KEY: '',
+      VITE_FIREBASE_AUTH_DOMAIN: '',
+      VITE_FIREBASE_PROJECT_ID: '',
+      VITE_FIREBASE_APP_ID: '',
+    },
   },
 });

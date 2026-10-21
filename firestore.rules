@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// データはサインインした Google アカウントごとに users/{uid} の下に置き、本人だけが読み書きできる。
+// 削除は他の端末に伝えるため削除の印（deleted）で表し、ドキュメントの削除は許さない。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && request.resource.data.keys().hasOnly(['initializedAt'])
+                    && request.resource.data.initializedAt == request.time;
+
+      match /{collection}/{docId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid
+                              && collection in ['accounts', 'categories', 'transactions', 'budgets']
+                              && request.resource.data.keys().hasOnly(['data', 'deleted', 'syncedAt'])
+                              && request.resource.data.deleted is bool
+                              && request.resource.data.syncedAt == request.time;
+      }
+    }
+  }
+}

@@ -4,14 +4,15 @@ import { MemoryRouter } from 'react-router-dom';
 import { AppRoutes } from '../App';
 import { db } from '../db/db';
 import { ensureSeeded } from '../db/seed';
+import type { SyncOptions } from '../sync/SyncContext';
 
 /** アプリ全体を指定パスで描画する。初期データの投入を待ってから返す */
-export async function renderApp(path = '/') {
+export async function renderApp(path = '/', sync?: SyncOptions) {
   await ensureSeeded();
   const user = userEvent.setup();
   const result = render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
+      <AppRoutes sync={sync} />
     </MemoryRouter>,
   );
   return { user, ...result };
