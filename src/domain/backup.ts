@@ -21,7 +21,7 @@ export interface Backup extends BackupData {
   exportedAt: string;
 }
 
-const accountSchema = z.object({
+export const accountSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   type: z.enum(['cash', 'bank', 'emoney', 'credit']),
@@ -31,7 +31,7 @@ const accountSchema = z.object({
   createdAt: z.string(),
 });
 
-const categorySchema = z.object({
+export const categorySchema = z.object({
   id: z.string().min(1),
   kind: z.enum(['income', 'expense']),
   name: z.string().min(1),
@@ -39,7 +39,7 @@ const categorySchema = z.object({
   sortOrder: z.number(),
 });
 
-const transactionSchema = z.object({
+export const transactionSchema = z.object({
   id: z.string().min(1),
   type: z.enum(['income', 'expense', 'transfer', 'adjustment']),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -52,7 +52,7 @@ const transactionSchema = z.object({
   updatedAt: z.string(),
 });
 
-const budgetSchema = z.object({
+export const budgetSchema = z.object({
   categoryId: z.string().min(1),
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
   amount: z.number().int().min(1).max(MAX_AMOUNT).nullable(),

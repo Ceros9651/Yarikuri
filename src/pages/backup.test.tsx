@@ -100,6 +100,32 @@ describe('エクスポートとインポートの往復', () => {
   });
 });
 
+describe('インポートと同期', () => {
+  it('置き換え前にあってファイルに無い取引も、置き換え後の記録も outbox に積まれる', async () => {
+    await populate();
+    const exported = await exportData();
+    const extra = exported.transactions[0];
+    const data = { ...exported, transactions: exported.transactions.slice(1) };
+    await db.outbox.clear();
+
+    await importData(data);
+
+    expect(await db.transactions.get(extra.id)).toBeUndefined();
+    expect(await db.outbox.get(['transactions', extra.id])).toBeDefined();
+    for (const tx of data.transactions) {
+      expect(await db.outbox.get(['transactions', tx.id])).toBeDefined();
+    }
+    const budget = data.budgets[0];
+    expect(await db.outbox.get(['budgets', `${budget.categoryId}__${budget.month}`])).toBeDefined();
+    expect(await db.outbox.count()).toBe(
+      data.accounts.length +
+        data.categories.length +
+        exported.transactions.length +
+        data.budgets.length,
+    );
+  });
+});
+
 describe('バックアップ画面', () => {
   it('エクスポートするとファイルを保存し、最終エクスポート日時を表示する', async () => {
     await populate();

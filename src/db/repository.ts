@@ -9,6 +9,7 @@ import {
   type TransactionDraft,
   type TransactionErrors,
 } from '../domain/validation';
+import { budgetDocId, markDirty } from '../sync/docs';
 import { db as defaultDb, type YarikuriDB } from './db';
 
 export class ValidationError extends Error {
@@ -32,17 +33,20 @@ export async function addAccount(
   db: YarikuriDB = defaultDb,
 ): Promise<string> {
   assertValid(validateName(input.name));
-  const account: Account = {
-    id: crypto.randomUUID(),
-    name: input.name.trim(),
-    type: input.type,
-    initialBalance: input.type === 'credit' ? 0 : (input.initialBalance ?? 0),
-    hidden: false,
-    sortOrder: ((await db.accounts.orderBy('sortOrder').last())?.sortOrder ?? -1) + 1,
-    createdAt: new Date().toISOString(),
-  };
-  await db.accounts.add(account);
-  return account.id;
+  return db.transaction('rw', db.accounts, db.outbox, async () => {
+    const account: Account = {
+      id: crypto.randomUUID(),
+      name: input.name.trim(),
+      type: input.type,
+      initialBalance: input.type === 'credit' ? 0 : (input.initialBalance ?? 0),
+      hidden: false,
+      sortOrder: ((await db.accounts.orderBy('sortOrder').last())?.sortOrder ?? -1) + 1,
+      createdAt: new Date().toISOString(),
+    };
+    await db.accounts.add(account);
+    await markDirty(db, 'accounts', [account.id]);
+    return account.id;
+  });
 }
 
 export async function updateAccount(
@@ -51,12 +55,15 @@ export async function updateAccount(
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
   assertValid(validateName(changes.name));
-  const account = await db.accounts.get(id);
-  if (!account) throw new Error('口座が見つかりません');
-  await db.accounts.update(id, {
-    name: changes.name.trim(),
-    initialBalance:
-      account.type === 'credit' ? 0 : (changes.initialBalance ?? account.initialBalance),
+  await db.transaction('rw', db.accounts, db.outbox, async () => {
+    const account = await db.accounts.get(id);
+    if (!account) throw new Error('口座が見つかりません');
+    await db.accounts.update(id, {
+      name: changes.name.trim(),
+      initialBalance:
+        account.type === 'credit' ? 0 : (changes.initialBalance ?? account.initialBalance),
+    });
+    await markDirty(db, 'accounts', [id]);
   });
 }
 
@@ -65,7 +72,10 @@ export async function setAccountHidden(
   hidden: boolean,
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
-  await db.accounts.update(id, { hidden });
+  await db.transaction('rw', db.accounts, db.outbox, async () => {
+    await db.accounts.update(id, { hidden });
+    await markDirty(db, 'accounts', [id]);
+  });
 }
 
 // ---- カテゴリ（削除はできず、非表示のみ） ----
@@ -79,16 +89,19 @@ export async function addCategory(
   input: { kind: CategoryKind; name: string },
   db: YarikuriDB = defaultDb,
 ): Promise<string> {
-  assertValid(validateName(input.name, await namesOfKind(input.kind, undefined, db)));
-  const category: Category = {
-    id: crypto.randomUUID(),
-    kind: input.kind,
-    name: input.name.trim(),
-    hidden: false,
-    sortOrder: ((await db.categories.orderBy('sortOrder').last())?.sortOrder ?? -1) + 1,
-  };
-  await db.categories.add(category);
-  return category.id;
+  return db.transaction('rw', db.categories, db.outbox, async () => {
+    assertValid(validateName(input.name, await namesOfKind(input.kind, undefined, db)));
+    const category: Category = {
+      id: crypto.randomUUID(),
+      kind: input.kind,
+      name: input.name.trim(),
+      hidden: false,
+      sortOrder: ((await db.categories.orderBy('sortOrder').last())?.sortOrder ?? -1) + 1,
+    };
+    await db.categories.add(category);
+    await markDirty(db, 'categories', [category.id]);
+    return category.id;
+  });
 }
 
 export async function renameCategory(
@@ -96,10 +109,13 @@ export async function renameCategory(
   name: string,
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
-  const category = await db.categories.get(id);
-  if (!category) throw new Error('カテゴリが見つかりません');
-  assertValid(validateName(name, await namesOfKind(category.kind, id, db)));
-  await db.categories.update(id, { name: name.trim() });
+  await db.transaction('rw', db.categories, db.outbox, async () => {
+    const category = await db.categories.get(id);
+    if (!category) throw new Error('カテゴリが見つかりません');
+    assertValid(validateName(name, await namesOfKind(category.kind, id, db)));
+    await db.categories.update(id, { name: name.trim() });
+    await markDirty(db, 'categories', [id]);
+  });
 }
 
 export async function setCategoryHidden(
@@ -107,7 +123,10 @@ export async function setCategoryHidden(
   hidden: boolean,
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
-  await db.categories.update(id, { hidden });
+  await db.transaction('rw', db.categories, db.outbox, async () => {
+    await db.categories.update(id, { hidden });
+    await markDirty(db, 'categories', [id]);
+  });
 }
 
 /**
@@ -118,7 +137,7 @@ export async function reorderCategories(
   orderedIds: readonly string[],
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
-  await db.transaction('rw', db.categories, async () => {
+  await db.transaction('rw', db.categories, db.outbox, async () => {
     const categories = await db.categories.bulkGet([...orderedIds]);
     if (categories.some((c) => !c)) throw new Error('カテゴリが見つかりません');
     const kinds = new Set(categories.map((c) => c!.kind));
@@ -127,6 +146,7 @@ export async function reorderCategories(
     await db.categories.bulkUpdate(
       orderedIds.map((key, i) => ({ key, changes: { sortOrder: sortOrders[i] } })),
     );
+    await markDirty(db, 'categories', orderedIds);
   });
 }
 
@@ -150,8 +170,11 @@ export async function setBudget(
   if (amount === null) {
     throw new ValidationError('予算は1〜999,999,999円の整数で入力してください');
   }
-  await assertExpenseCategory(categoryId, db);
-  await db.budgets.put({ categoryId, month, amount });
+  await db.transaction('rw', db.categories, db.budgets, db.outbox, async () => {
+    await assertExpenseCategory(categoryId, db);
+    await db.budgets.put({ categoryId, month, amount });
+    await markDirty(db, 'budgets', [budgetDocId(categoryId, month)]);
+  });
 }
 
 /** month 以降を予算なしにする */
@@ -160,8 +183,11 @@ export async function clearBudget(
   month: string,
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
-  await assertExpenseCategory(categoryId, db);
-  await db.budgets.put({ categoryId, month, amount: null });
+  await db.transaction('rw', db.categories, db.budgets, db.outbox, async () => {
+    await assertExpenseCategory(categoryId, db);
+    await db.budgets.put({ categoryId, month, amount: null });
+    await markDirty(db, 'budgets', [budgetDocId(categoryId, month)]);
+  });
 }
 
 // ---- 取引 ----
@@ -176,7 +202,7 @@ export async function saveTransaction(
   id?: string,
   db: YarikuriDB = defaultDb,
 ): Promise<string> {
-  return db.transaction('rw', db.accounts, db.transactions, async () => {
+  return db.transaction('rw', db.accounts, db.transactions, db.outbox, async () => {
     const accounts = await db.accounts.toArray();
     const errors = validateTransaction(draft, accounts);
     if (Object.keys(errors).length > 0) {
@@ -215,6 +241,7 @@ export async function saveTransaction(
       updatedAt: now,
     };
     await db.transactions.put(tx);
+    await markDirty(db, 'transactions', [tx.id]);
     return tx.id;
   });
 }
@@ -242,5 +269,8 @@ export async function getBudgetAlert(
 }
 
 export async function deleteTransaction(id: string, db: YarikuriDB = defaultDb): Promise<void> {
-  await db.transactions.delete(id);
+  await db.transaction('rw', db.transactions, db.outbox, async () => {
+    await db.transactions.delete(id);
+    await markDirty(db, 'transactions', [id]);
+  });
 }

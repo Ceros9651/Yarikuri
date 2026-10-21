@@ -8,25 +8,28 @@ import { HomePage } from './pages/HomePage';
 import { NewTransactionPage } from './pages/NewTransactionPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TransactionsPage } from './pages/TransactionsPage';
+import { SyncProvider, type SyncOptions } from './sync/SyncContext';
 
-/** ルーター以外のアプリ本体。テストでは MemoryRouter で包んで使う */
-export function AppRoutes() {
+/** ルーター以外のアプリ本体。テストでは MemoryRouter で包み、sync に偽の同期の窓口を渡して使う */
+export function AppRoutes({ sync }: { sync?: SyncOptions } = {}) {
   useEffect(() => {
     ensureSeeded().catch((e) => console.error('初期データの投入に失敗しました', e));
   }, []);
 
   return (
-    <MonthProvider>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<HomePage />} />
-          <Route path="transactions" element={<TransactionsPage />} />
-          <Route path="transactions/:id" element={<EditTransactionPage />} />
-          <Route path="new" element={<NewTransactionPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </MonthProvider>
+    <SyncProvider {...sync}>
+      <MonthProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<HomePage />} />
+            <Route path="transactions" element={<TransactionsPage />} />
+            <Route path="transactions/:id" element={<EditTransactionPage />} />
+            <Route path="new" element={<NewTransactionPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </MonthProvider>
+    </SyncProvider>
   );
 }
 
