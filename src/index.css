@@ -679,14 +679,19 @@ button.drag-handle > svg {
     flex-direction: column;
     justify-content: flex-start;
     gap: 2px;
-    padding: 24px 12px;
+    /* 上の余白は .content と同じにし、アプリ名を本文の 1 行目にそろえる */
+    padding: 32px 12px 24px;
+    /* 本文と同じ背景にし、区切りは右の罫線 1 本だけにする */
+    background: var(--bg);
     border-top: none;
     border-right: 1px solid var(--border);
   }
 
+  /* 行の高さは月の切り替えのボタン（44px）と同じ */
   .nav-title {
     display: block;
-    padding: 0 12px 20px;
+    padding: 0 12px 12px;
+    line-height: 44px;
     font-weight: 700;
   }
 
@@ -701,8 +706,34 @@ button.drag-handle > svg {
     font-size: 0.95rem;
   }
 
+  /* 見出しの行を月の切り替えのボタン（44px）と同じ高さにし、サイドバーのアプリ名と中心をそろえる */
+  h1 {
+    line-height: 44px;
+    margin-bottom: 4px;
+  }
+
+  /*
+   * 月名を左端に置き、前後のボタンを右にまとめる。DOM（読み上げ）の順は 前月→月名→次月 のまま。
+   * 幅は親（本文・カードの内側）いっぱいにし、‹ › の右端を下の一覧の右端とそろえる
+   */
   .month-switcher {
-    max-width: 480px;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .month-switcher h2 {
+    order: -1;
+    margin-right: auto;
+  }
+
+  /* カードの中（設定の予算）では、月名をカードの見出しより大きくしない */
+  .card .month-switcher h2 {
+    font-size: 1rem;
+  }
+
+  /* ホームでは左列の幅にそろえる。48px は .home-columns の column-gap と同じ値 */
+  .content:has(.home-columns) .month-switcher {
+    max-width: calc((100% - 48px) / 2);
   }
 
   /* 列の間は罫線を引かず余白で区切る。各列は上詰め */
