@@ -83,14 +83,37 @@ function createAuth(auth: ReturnType<typeof initializeAuth>): SyncAuth {
     onChange(callback) {
       return onAuthStateChanged(auth, (user) => callback(user ? toSyncUser(user) : null));
     },
-    async signIn() {
-      try {
-        const result = await signInWithPopup(auth, new GoogleAuthProvider());
-        return toSyncUser(result.user);
-      } catch (e) {
-        if (e instanceof FirebaseError && CANCELLED_CODES.includes(e.code)) return null;
-        throw e;
-      }
+    signIn() {
+      return new Promise<SyncUser | null>((resolve, reject) => {
+        let settled = false;
+        let unsubscribe: () => void = () => {};
+        const finish = (settle: () => void) => {
+          if (settled) return;
+          settled = true;
+          unsubscribe();
+          settle();
+        };
+        // iOS のホーム画面アプリでは、ポップアップでサインインが済んでも signInWithPopup が
+        // 終わらないことがあるため、サインイン状態の変化でも完了とみなす。最初の通知は今の状態なので数えない
+        let first = true;
+        unsubscribe = onAuthStateChanged(auth, (user) => {
+          if (first) {
+            first = false;
+            return;
+          }
+          if (user) finish(() => resolve(toSyncUser(user)));
+        });
+        // ポップアップはボタンを押した直後に開かないと止められるため、この前で await しない
+        signInWithPopup(auth, new GoogleAuthProvider()).then(
+          (result) => finish(() => resolve(toSyncUser(result.user))),
+          (e: unknown) =>
+            finish(() =>
+              e instanceof FirebaseError && CANCELLED_CODES.includes(e.code)
+                ? resolve(null)
+                : reject(e),
+            ),
+        );
+      });
     },
     signOut: () => signOut(auth),
   };
