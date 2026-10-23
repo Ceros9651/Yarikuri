@@ -13,6 +13,7 @@
   --warning: #b45309;
   --radius: 12px;
   --tab-height: 60px;
+  --sidebar-width: 200px;
 
   color-scheme: light;
   font-family:
@@ -189,6 +190,11 @@ button:disabled {
 .tab.active {
   color: var(--primary);
   font-weight: 600;
+}
+
+/* アプリ名は PC 版のサイドバーでだけ出す */
+.nav-title {
+  display: none;
 }
 
 /* カード・リスト */
@@ -641,4 +647,100 @@ button.drag-handle > svg {
 
 .tx-filters .field:last-child {
   margin-bottom: 0;
+}
+
+/*
+ * PC 版（画面幅 1024px 以上）
+ * 下部タブバー（.tab-bar）を画面左に固定したサイドバーとして見せ、本文はその右に左寄せで置く。
+ * DOM はスマホ版と同じで、見た目だけをここで切り替える
+ */
+@media (min-width: 1024px) {
+  .app {
+    max-width: none;
+    margin: 0;
+    padding-left: var(--sidebar-width);
+  }
+
+  .content {
+    max-width: 640px;
+    padding: 32px 40px 48px;
+  }
+
+  /* ホームは 2 列にするので広げる */
+  .content:has(.home-columns) {
+    max-width: 1040px;
+  }
+
+  /* .tab-bar はここではサイドバー */
+  .tab-bar {
+    top: 0;
+    right: auto;
+    width: var(--sidebar-width);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2px;
+    /* 上の余白は .content と同じにし、アプリ名を本文の 1 行目にそろえる */
+    padding: 32px 12px 24px;
+    /* 本文と同じ背景にし、区切りは右の罫線 1 本だけにする */
+    background: var(--bg);
+    border-top: none;
+    border-right: 1px solid var(--border);
+  }
+
+  /* 行の高さは月の切り替えのボタン（44px）と同じ */
+  .nav-title {
+    display: block;
+    padding: 0 12px 12px;
+    line-height: 44px;
+    font-weight: 700;
+  }
+
+  .tab {
+    flex: none;
+    max-width: none;
+    height: 44px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 12px;
+    font-size: 0.95rem;
+  }
+
+  /* 見出しの行を月の切り替えのボタン（44px）と同じ高さにし、サイドバーのアプリ名と中心をそろえる */
+  h1 {
+    line-height: 44px;
+    margin-bottom: 4px;
+  }
+
+  /*
+   * 月名を左端に置き、前後のボタンを右にまとめる。DOM（読み上げ）の順は 前月→月名→次月 のまま。
+   * 幅は親（本文・カードの内側）いっぱいにし、‹ › の右端を下の一覧の右端とそろえる
+   */
+  .month-switcher {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .month-switcher h2 {
+    order: -1;
+    margin-right: auto;
+  }
+
+  /* カードの中（設定の予算）では、月名をカードの見出しより大きくしない */
+  .card .month-switcher h2 {
+    font-size: 1rem;
+  }
+
+  /* ホームでは左列の幅にそろえる。48px は .home-columns の column-gap と同じ値 */
+  .content:has(.home-columns) .month-switcher {
+    max-width: calc((100% - 48px) / 2);
+  }
+
+  /* 列の間は罫線を引かず余白で区切る。各列は上詰め */
+  .home-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 48px;
+    align-items: start;
+  }
 }

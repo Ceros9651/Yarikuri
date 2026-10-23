@@ -1,3 +1,4 @@
+import { within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp, resetDb, screen } from '../test/render';
 
@@ -20,6 +21,17 @@ describe('下部タブバー', () => {
 
     await user.click(screen.getByRole('link', { name: /ホーム/ }));
     expect(screen.getByRole('heading', { level: 1, name: 'ホーム' })).toBeInTheDocument();
+  });
+
+  it('メインメニューにアプリ名があり、リンクは4つのまま', async () => {
+    await renderApp('/');
+    const nav = screen.getByRole('navigation', { name: 'メインメニュー' });
+    expect(within(nav).getByText('Yarikuri')).toBeInTheDocument();
+    expect(
+      within(nav)
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual(['ホーム', '取引一覧', '入力', '設定']);
   });
 
   it('現在のタブが選択状態になる', async () => {

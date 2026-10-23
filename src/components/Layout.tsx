@@ -105,6 +105,8 @@ export function Layout() {
         <Outlet />
       </main>
       <nav className="tab-bar" aria-label="メインメニュー">
+        {/* PC 版のサイドバーの上端にだけ出す。スマホ版では CSS で隠す */}
+        <span className="nav-title">Yarikuri</span>
         {TABS.map((tab) => (
           <NavLink key={tab.to} to={tab.to} end={tab.end} className="tab">
             <span className="tab-icon" aria-hidden="true">
