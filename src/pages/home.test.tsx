@@ -94,6 +94,26 @@ describe('セクションの並び順', () => {
       alert.compareDocumentPosition(regions[0]) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it('PC 版の2列用に、1列目に収支とカテゴリ、2列目にカード・予算・残高を入れる', async () => {
+    const { cardA, cat, save } = await setup();
+    await save({ amount: '5000', categoryId: cat('食費') });
+    await save({ amount: '3000', accountId: cardA, categoryId: cat('日用品') });
+    await setBudget(cat('食費'), '2026-10', '1000');
+
+    const { container } = await renderHome();
+    const alert = await screen.findByTestId('over-budget');
+    const columns = container.querySelectorAll('.home-columns > .home-col');
+    const labels = (col: Element) =>
+      within(col as HTMLElement)
+        .getAllByRole('region')
+        .map((r) => r.getAttribute('aria-label') ?? r.querySelector('h2')?.textContent);
+    expect(columns).toHaveLength(2);
+    expect(labels(columns[0])).toEqual(['月の収支', 'カテゴリ別の出費']);
+    expect(labels(columns[1])).toEqual(['カード別の利用額', '予算', '残高']);
+    // アラートは2列の外（上）に置く
+    expect(alert.closest('.home-columns')).toBeNull();
+  });
 });
 
 describe('口座別残高', () => {

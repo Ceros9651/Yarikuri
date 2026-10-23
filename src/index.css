@@ -13,6 +13,7 @@
   --warning: #b45309;
   --radius: 12px;
   --tab-height: 60px;
+  --sidebar-width: 200px;
 
   color-scheme: light;
   font-family:
@@ -189,6 +190,11 @@ button:disabled {
 .tab.active {
   color: var(--primary);
   font-weight: 600;
+}
+
+/* アプリ名は PC 版のサイドバーでだけ出す */
+.nav-title {
+  display: none;
 }
 
 /* カード・リスト */
@@ -641,4 +647,69 @@ button.drag-handle > svg {
 
 .tx-filters .field:last-child {
   margin-bottom: 0;
+}
+
+/*
+ * PC 版（画面幅 1024px 以上）
+ * 下部タブバー（.tab-bar）を画面左に固定したサイドバーとして見せ、本文はその右に左寄せで置く。
+ * DOM はスマホ版と同じで、見た目だけをここで切り替える
+ */
+@media (min-width: 1024px) {
+  .app {
+    max-width: none;
+    margin: 0;
+    padding-left: var(--sidebar-width);
+  }
+
+  .content {
+    max-width: 640px;
+    padding: 32px 40px 48px;
+  }
+
+  /* ホームは 2 列にするので広げる */
+  .content:has(.home-columns) {
+    max-width: 1040px;
+  }
+
+  /* .tab-bar はここではサイドバー */
+  .tab-bar {
+    top: 0;
+    right: auto;
+    width: var(--sidebar-width);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 24px 12px;
+    border-top: none;
+    border-right: 1px solid var(--border);
+  }
+
+  .nav-title {
+    display: block;
+    padding: 0 12px 20px;
+    font-weight: 700;
+  }
+
+  .tab {
+    flex: none;
+    max-width: none;
+    height: 44px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 12px;
+    font-size: 0.95rem;
+  }
+
+  .month-switcher {
+    max-width: 480px;
+  }
+
+  /* 列の間は罫線を引かず余白で区切る。各列は上詰め */
+  .home-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 48px;
+    align-items: start;
+  }
 }
