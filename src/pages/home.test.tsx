@@ -5,6 +5,7 @@ import { ensureSeeded } from '../db/seed';
 import type { TransactionDraft } from '../domain/validation';
 import { makeTx } from '../test/factories';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
+import { mockViewport } from '../test/viewport';
 
 async function setup() {
   await ensureSeeded();
@@ -77,8 +78,15 @@ describe('月の収入・出費・差額', () => {
   });
 });
 
+/** 表示中のセクションの名前を、文書の順（読み上げの順）で返す */
+function sectionLabels() {
+  return screen
+    .getAllByRole('region')
+    .map((r) => r.getAttribute('aria-label') ?? r.querySelector('h2')?.textContent);
+}
+
 describe('セクションの並び順', () => {
-  it('予算超過のアラートの下に、収支・カテゴリ・カード・予算・残高の順で並ぶ', async () => {
+  it('PC 版では予算超過のアラートの下に、収支・カテゴリ・カード・予算・残高の順で並ぶ', async () => {
     const { cardA, cat, save } = await setup();
     await save({ amount: '5000', categoryId: cat('食費') });
     await save({ amount: '3000', accountId: cardA, categoryId: cat('日用品') });
@@ -113,6 +121,43 @@ describe('セクションの並び順', () => {
     expect(labels(columns[1])).toEqual(['カード別の利用額', '予算', '残高']);
     // アラートは2列の外（上）に置く
     expect(alert.closest('.home-columns')).toBeNull();
+  });
+
+  it('スマホ版では予算超過のアラートの下に、収支・カード・残高・予算の順で並び、カテゴリは出さない', async () => {
+    const { cardA, cat, save } = await setup();
+    await save({ amount: '5000', categoryId: cat('食費') });
+    await save({ amount: '3000', accountId: cardA, categoryId: cat('日用品') });
+    await setBudget(cat('食費'), '2026-10', '1000');
+
+    mockViewport('mobile');
+    await renderHome();
+    const alert = await screen.findByTestId('over-budget');
+    expect(sectionLabels()).toEqual(['月の収支', 'カード別の利用額', '残高', '予算']);
+    expect(screen.queryByRole('heading', { name: 'カテゴリ別の出費' })).not.toBeInTheDocument();
+    expect(
+      alert.compareDocumentPosition(screen.getAllByRole('region')[0]) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('画面幅を変えると、その場で並びとカテゴリ別の出費の有無が切り替わる', async () => {
+    const { cat, save } = await setup();
+    await save({ amount: '5000', categoryId: cat('食費') });
+
+    mockViewport('desktop');
+    await renderHome();
+    await screen.findByRole('heading', { name: 'カテゴリ別の出費' });
+    mockViewport('mobile');
+    expect(sectionLabels()).toEqual(['月の収支', 'カード別の利用額', '残高', '予算']);
+    expect(screen.getByText('2026年10月')).toBeInTheDocument();
+    mockViewport('desktop');
+    expect(sectionLabels()).toEqual([
+      '月の収支',
+      'カテゴリ別の出費',
+      'カード別の利用額',
+      '予算',
+      '残高',
+    ]);
   });
 });
 
