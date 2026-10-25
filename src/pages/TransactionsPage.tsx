@@ -8,7 +8,7 @@ import { todayString } from '../domain/date';
 import { formatYen } from '../domain/format';
 import { summarizeMonth, UNCATEGORIZED } from '../domain/summary';
 import { TRANSACTION_TYPE_LABELS, type Transaction } from '../domain/types';
-import { useAllData } from '../hooks/useData';
+import { useMonthData } from '../hooks/useData';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 
 function signedAmount(tx: Transaction): { text: string; className: string } {
@@ -135,7 +135,10 @@ function TransactionCalendar({ month, transactions, selected, onSelect }: Calend
 }
 
 export function TransactionsPage() {
-  const { month } = useMonth();
+  const { month: selectedMonth } = useMonth();
+  const data = useMonthData(selectedMonth);
+  // 月を切り替えた直後は、新しい月を読み終えるまで前の月の内容を出し続ける
+  const month = data?.month ?? selectedMonth;
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -153,7 +156,6 @@ export function TransactionsPage() {
     account === null &&
     dateParam === null &&
     searchParams.get('view') !== 'list';
-  const data = useAllData();
   const accounts = data?.accounts ?? [];
   const categories = data?.categories ?? [];
   const transactions = data?.transactions;
@@ -161,7 +163,7 @@ export function TransactionsPage() {
   const accountName = (id?: string) => accounts.find((a) => a.id === id)?.name ?? '';
   const categoryName = (id?: string) => categories.find((c) => c.id === id)?.name ?? '未分類';
 
-  const monthTransactions = (transactions ?? []).filter((tx) => tx.date.startsWith(`${month}-`));
+  const monthTransactions = transactions ?? [];
   // カレンダーの金額はカテゴリ・支払元の絞り込みに連動させ、日付では絞らない
   const matched = monthTransactions.filter(
     (tx) => matchesCategory(tx, category) && matchesAccount(tx, account),

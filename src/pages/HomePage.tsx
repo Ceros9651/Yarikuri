@@ -2,18 +2,17 @@ import { Link } from 'react-router-dom';
 import { CategoryExpenses } from '../components/CategoryExpenses';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
-import { computeBalances } from '../domain/balance';
+import { balancesAtMonthEnd } from '../domain/balance';
 import { BUDGET_STATUS_LABELS, summarizeBudgets } from '../domain/budget';
-import { lastDayOfMonth } from '../domain/date';
 import { formatYen } from '../domain/format';
 import { summarizeMonth } from '../domain/summary';
 import { isAssetAccount } from '../domain/types';
-import { useAllData } from '../hooks/useData';
+import { useMonthData } from '../hooks/useData';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 
 export function HomePage() {
-  const { month } = useMonth();
-  const data = useAllData();
+  const { month: selectedMonth } = useMonth();
+  const data = useMonthData(selectedMonth);
   const isDesktop = useIsDesktop();
   if (!data) {
     return (
@@ -23,13 +22,14 @@ export function HomePage() {
       </>
     );
   }
-  const { accounts, categories, transactions, budgets } = data;
+  // 月を切り替えた直後は、新しい月を読み終えるまで前の月の内容を出し続ける
+  const { month, accounts, categories, transactions, budgets, balanceDeltas } = data;
 
   const summary = summarizeMonth(month, transactions, accounts, categories);
   const budgetUsages = summarizeBudgets(month, transactions, accounts, categories, budgets);
   const overBudget = budgetUsages.filter((b) => b.status === 'over');
   const assetAccounts = accounts.filter((a) => isAssetAccount(a) && !a.hidden);
-  const balances = computeBalances(assetAccounts, transactions, lastDayOfMonth(month));
+  const balances = balancesAtMonthEnd(assetAccounts, balanceDeltas, month);
   const totalBalance = [...balances.values()].reduce((sum, b) => sum + b, 0);
 
   const budgetsSection = (
@@ -178,7 +178,7 @@ export function HomePage() {
         </div>
       </div>
 
-      {accounts.length > 0 && transactions.length === 0 && (
+      {accounts.length > 0 && data.transactionCount === 0 && (
         <p className="notice">
           まずは<Link to="/settings">設定</Link>で口座と初期残高を登録し、
           <Link to="/new">入力</Link>から記録を始めましょう。

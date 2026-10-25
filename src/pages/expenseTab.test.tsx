@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { addAccount, saveTransaction } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
+import { putTransactions } from '../test/db';
 import { makeTx } from '../test/factories';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
 import { mockViewport } from '../test/viewport';
@@ -31,9 +32,9 @@ async function setup() {
   await save('expense', '2026-10-08', '500', cat('食費'));
   await save('expense', '2026-10-04', '400', cat('食費'), card);
   await save('expense', '2026-10-05', '700', cat('日用品'));
-  await db.transactions.add(
+  await putTransactions([
     makeTx({ type: 'expense', date: '2026-10-06', amount: 111, accountId: wallet }),
-  );
+  ]);
   await save('income', '2026-10-25', '250000', cat('給与', 'income'), bank);
   await save('transfer', '2026-10-07', '20000', '', bank, wallet);
   return { wallet, cat };

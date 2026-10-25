@@ -1,5 +1,4 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { computeBalance } from '../domain/balance';
 import { todayString } from '../domain/date';
 import { formatYen } from '../domain/format';
 import {
@@ -17,7 +16,7 @@ import {
 } from '../domain/validation';
 import { getBudgetAlert, saveTransaction, ValidationError } from '../db/repository';
 import type { BudgetAlert } from '../domain/budget';
-import { useAccounts, useCategories, useTransactions } from '../hooks/useData';
+import { useAccounts, useBalanceAsOf, useCategories } from '../hooks/useData';
 
 const TYPE_ORDER: TransactionType[] = ['expense', 'income', 'transfer', 'adjustment'];
 
@@ -51,7 +50,6 @@ function pick<T extends { id: string }>(options: T[], id: string, except?: strin
 export function TransactionForm({ initial, initialAmount, onSaved, onError }: Props) {
   const accounts = useAccounts();
   const categories = useCategories();
-  const transactions = useTransactions() ?? [];
 
   const [type, setType] = useState<TransactionType>(initial?.type ?? 'expense');
   const [date, setDate] = useState(initial?.date ?? todayString());
@@ -78,11 +76,9 @@ export function TransactionForm({ initial, initialAmount, onSaved, onError }: Pr
   const selectedCategory = pick(categoryOptions, categoryId);
   const hasCategory = type === 'income' || type === 'expense';
 
-  const adjustmentAccount = accounts.find((a) => a.id === selectedFrom);
+  // 残高調整のときだけ、調整日の時点の残高（編集中の調整自身は除く）を読む
   const currentBalance =
-    type === 'adjustment' && adjustmentAccount
-      ? computeBalance(adjustmentAccount, transactions, date, initial?.id)
-      : null;
+    useBalanceAsOf(type === 'adjustment' ? selectedFrom : undefined, date, initial) ?? null;
 
   /** 保存した内容の要約。金額は保存前に検証済み */
   function summarize(): string {

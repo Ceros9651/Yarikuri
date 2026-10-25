@@ -6,6 +6,7 @@ import { addAccount, clearBudget, saveTransaction, setBudget } from '../db/repos
 import { ensureSeeded } from '../db/seed';
 import { createBackup, parseBackup } from '../domain/backup';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
+import { expectDeltasMatchTransactions } from '../test/db';
 
 /** 設定画面には他にも status があるので、バックアップ欄の中のものを探す */
 const backupStatus = () =>
@@ -93,6 +94,8 @@ describe('エクスポートとインポートの往復', () => {
       if (!parsed.ok) throw new Error(parsed.error);
       await importData(parsed.data, other);
       expect(await exportData(other)).toEqual(exported);
+      await expectDeltasMatchTransactions(other);
+      expect(await other.balanceDeltas.count()).toBeGreaterThan(0);
       expect(exported.budgets).toHaveLength(2);
     } finally {
       await other.delete();
@@ -111,6 +114,8 @@ describe('インポートと同期', () => {
     await importData(data);
 
     expect(await db.transactions.get(extra.id)).toBeUndefined();
+    // 置き換え前の取引の増減は残らず、ファイルの取引から作り直される
+    await expectDeltasMatchTransactions();
     expect(await db.outbox.get(['transactions', extra.id])).toBeDefined();
     for (const tx of data.transactions) {
       expect(await db.outbox.get(['transactions', tx.id])).toBeDefined();

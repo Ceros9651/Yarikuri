@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { computeBalance } from '../domain/balance';
+import { balancesAtMonthEnd, computeBalance } from '../domain/balance';
+import { lastDayOfMonth } from '../domain/date';
 import type { TransactionDraft } from '../domain/validation';
 import { YarikuriDB } from './db';
 import * as repo from './repository';
@@ -33,6 +34,7 @@ describe('スキーマ', () => {
     expect(db.isOpen()).toBe(true);
     expect(db.tables.map((t) => t.name).sort()).toEqual([
       'accounts',
+      'balanceDeltas',
       'budgets',
       'categories',
       'meta',
@@ -335,6 +337,112 @@ describe('取引', () => {
     expect((await db.transactions.get(id))?.amount).toBe(-300);
     const account = (await db.accounts.get(wallet))!;
     expect(computeBalance(account, await db.transactions.toArray())).toBe(5_000);
+  });
+
+  /** 増減の表から求めた月末の残高と、全取引から求めた残高 */
+  async function monthEndBalance(accountId: string, month: string) {
+    const account = (await db.accounts.get(accountId))!;
+    const fromDeltas = balancesAtMonthEnd([account], await db.balanceDeltas.toArray(), month).get(
+      accountId,
+    );
+    const fromAll = computeBalance(account, await db.transactions.toArray(), lastDayOfMonth(month));
+    expect(fromDeltas).toBe(fromAll);
+    return fromDeltas;
+  }
+
+  it('過去の月の取引を編集・削除すると、以後の月末の残高が変わる', async () => {
+    const { wallet, food } = await setup();
+    const old = await repo.saveTransaction(
+      draft({ date: '2024-03-10', accountId: wallet, categoryId: food, amount: '1000' }),
+      '',
+      undefined,
+      db,
+    );
+    await repo.saveTransaction(
+      draft({ date: '2026-10-05', accountId: wallet, categoryId: food, amount: '300' }),
+      '',
+      undefined,
+      db,
+    );
+    expect(await monthEndBalance(wallet, '2026-10')).toBe(4_000);
+
+    await repo.saveTransaction(
+      draft({ date: '2024-03-10', accountId: wallet, categoryId: food, amount: '1500' }),
+      '',
+      old,
+      db,
+    );
+    expect(await monthEndBalance(wallet, '2024-03')).toBe(3_800);
+    expect(await monthEndBalance(wallet, '2026-10')).toBe(3_500);
+
+    await repo.deleteTransaction(old, db);
+    expect(await monthEndBalance(wallet, '2024-03')).toBe(5_300);
+    expect(await monthEndBalance(wallet, '2026-10')).toBe(5_000);
+  });
+
+  it('残高調整の日付を前の月から移す編集でも、調整自身を除いて差額を出し直す', async () => {
+    const { wallet, food } = await setup();
+    await repo.saveTransaction(
+      draft({ date: '2026-09-01', accountId: wallet, categoryId: food, amount: '300' }),
+      '',
+      undefined,
+      db,
+    );
+    const id = await repo.saveTransaction(
+      draft({ type: 'adjustment', date: '2026-09-20', accountId: wallet, amount: '4000' }),
+      '',
+      undefined,
+      db,
+    );
+    expect((await db.transactions.get(id))?.amount).toBe(-1_000);
+
+    await repo.saveTransaction(
+      draft({ type: 'adjustment', date: '2026-10-10', accountId: wallet, amount: '4500' }),
+      '',
+      id,
+      db,
+    );
+    expect((await db.transactions.get(id))?.amount).toBe(-500);
+    expect(await monthEndBalance(wallet, '2026-09')).toBe(5_000);
+    expect(await monthEndBalance(wallet, '2026-10')).toBe(4_500);
+  });
+
+  it('予算のアラートは保存した取引の月の出費だけで判定する', async () => {
+    const { wallet, food } = await setup();
+    await repo.setBudget(food, '2026-01', '1000', db);
+    // 前の月の出費は含めない
+    await repo.saveTransaction(
+      draft({ date: '2026-09-30', accountId: wallet, categoryId: food, amount: '900' }),
+      '',
+      undefined,
+      db,
+    );
+    const first = await repo.saveTransaction(
+      draft({ date: '2026-10-01', accountId: wallet, categoryId: food, amount: '700' }),
+      '',
+      undefined,
+      db,
+    );
+    expect(await repo.getBudgetAlert(first, db)).toBeNull();
+
+    const second = await repo.saveTransaction(
+      draft({ date: '2026-10-31', accountId: wallet, categoryId: food, amount: '100' }),
+      '',
+      undefined,
+      db,
+    );
+    expect(await repo.getBudgetAlert(second, db)).toMatchObject({ status: 'warning' });
+
+    const third = await repo.saveTransaction(
+      draft({ date: '2026-10-15', accountId: wallet, categoryId: food, amount: '201' }),
+      '',
+      undefined,
+      db,
+    );
+    expect(await repo.getBudgetAlert(third, db)).toMatchObject({
+      status: 'over',
+      message: '食費が予算を超過しました（¥1,001 / ¥1,000）',
+    });
   });
 });
 

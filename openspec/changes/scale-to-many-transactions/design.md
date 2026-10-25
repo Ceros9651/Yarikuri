@@ -35,7 +35,9 @@
 
 `useAllData()` を `useMonthData(month)` に置き換え、取引は `db.transactions.where('date').between(`${month}-01`, `${month}-31`, true, true)` で読む。口座・カテゴリ・予算・増減の表と同じトランザクションで読み、今と同じく「名前が空の一瞬」を描画しない。
 
-Dexie 4 の `liveQuery` は読んだ索引の範囲だけを購読するので、他の月の取引を書いても再読み込みは起きない（同期で過去の月の取引が届いた場合など）。
+Dexie 4 の `liveQuery` は読んだ索引の範囲と表を購読する。残高の増減の表も同じ読み込みに含めるので、他の月の取引を書いても（その口座の増減が変わるため）読み直しは起きるが、そのとき取引の表から読むのは表示中の月の取引だけで、件数は全体の件数によらない。
+
+月を切り替えた直後、`useLiveQuery` は新しい月を読み終えるまで前の月の結果を返す。結果に読んだ月を持たせ、ホームと取引一覧はその月の内容をそのまま出し続ける（0円や「取引はありません」が一瞬出ないようにする）。月の切り替えの表示は選んだ月にすぐ変わる。
 
 ホームの「まずは設定で口座と…」の案内は「取引が1件もない」ことで出しているので、月の取引ではなく `db.transactions.count()` を同じ読み込みで返す（件数は索引から求まり、全件を読まない）。
 
@@ -52,7 +54,7 @@ Dexie 4 の `liveQuery` は読んだ索引の範囲だけを購読するので�
 残高の求め方（`src/domain/balance.ts` に純粋関数として加える）：
 
 - 月末の残高 `balancesAtMonthEnd(accounts, deltas, month)`：`initialBalance + Σ(delta | 行の month ≤ month)`。ホームの残高に使う。`computeBalances(accounts, 全取引, lastDayOfMonth(month))` と同じ値になる。
-- ある日の残高 `balanceAsOf(account, deltas, monthTransactions, date, excludeId?)`：`initialBalance + Σ(delta | 行の month < monthOf(date)) + Σ(その月の date 以前の取引の増減、excludeId を除く)`。残高調整の差額と「現在の残高」「実際の残高」に使う。`computeBalance(account, 全取引, date, excludeId)` と同じ値になる。
+- ある日の残高 `balanceAsOf(account, deltas, monthTransactions, date, exclude?)`：`initialBalance + Σ(delta | 行の month < monthOf(date)) + Σ(その月の date 以前の取引の増減、exclude を除く)`。exclude（編集中の残高調整）は id ではなく保存済みの取引そのものを受け取り、前の月にあれば増減の合計に含まれているぶんを引き戻す（調整の日付を別の月に変える編集で必要）。残高調整の差額と「現在の残高」「実際の残高」に使う。`computeBalance(account, 全取引, date, exclude.id)` と同じ値になる。
 
 既存の `computeBalance` / `computeBalances` は残し、テストで新しい関数の結果と照合する基準にする。
 
@@ -87,7 +89,7 @@ Dexie 4 の `liveQuery` は読んだ索引の範囲だけを購読するので�
 
 - `getBudgetAlert`：保存した取引の月の取引だけを読み、`budgetAlertFor` に渡す（`summarizeMonth` は月で絞るので結果は同じ）。
 - `saveTransaction` の残高調整：その口座の増減の表の行と、調整日の月の取引だけを読み、`balanceAsOf` から差額を求める。
-- `TransactionForm`・`EditTransactionPage`：`useTransactions()` をやめ、口座・日付・除外する取引 id を受け取って残高を返す `useBalanceAsOf(accountId, date, excludeId)` に置き換える。残高調整以外の種類では読まない。
+- `TransactionForm`・`EditTransactionPage`：`useTransactions()` をやめ、口座・日付・除外する保存済みの取引を受け取って残高を返す `useBalanceAsOf(accountId, date, exclude?)` に置き換える。残高調整以外の種類では読まない（accountId を渡さない）。引数を変えた直後に前の引数の結果を返さないよう、読み終えるまでは undefined（読み込み中）を返す。編集画面は「実際の残高」の初期値をフォームを作るときに一度だけ決めるため、前の結果で決めてしまわないようにする。
 
 `useTransactions()`（全件）は使う箇所がなくなるので消す。
 
