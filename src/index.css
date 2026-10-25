@@ -640,28 +640,108 @@ button.drag-handle > svg {
   cursor: grabbing;
 }
 
-/* 取引一覧の絞り込みの選択肢。カードで囲まず、一覧とは余白で区切る */
+/*
+ * 取引一覧の絞り込み。条件ごとに 1 つのボタン（名前と選択中の値）にまとめて折り返さずに 1 行に並べ、
+ * 収まらないときは選択中の値だけを省略する。押すと選択肢が開く（開いた選択肢は OS に任せる）
+ */
 .tx-filters {
+  display: flex;
+  gap: 8px;
   margin-bottom: 20px;
 }
 
-.tx-filters .field:last-child {
-  margin-bottom: 0;
+.tx-filter {
+  position: relative;
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 28px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
-/* 日付で絞り込み中の表示。カレンダーのないスマホ版でも出し、ここから解除できるようにする */
-.tx-day-filter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+.tx-filter-name {
+  flex: none;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tx-filter-name::after {
+  content: ':';
+}
+
+.tx-filter-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
 }
 
-/* 解除の文字の右端を、下の一覧の枠の右端にそろえる */
-.tx-day-filter > button {
-  padding-right: 0;
+/* 透明な select をボタン全体に重ね、名前の部分を押しても選択肢が開くようにする */
+.tx-filter select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* select は透明なので、キーボードで選んだときの枠はボタンに出す */
+.tx-filter:has(select:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.tx-filter::after {
+  content: '▾' / '';
+  position: absolute;
+  right: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* 絞り込んでいる条件だけをアクセント色で示す */
+.tx-filter.active {
+  border-color: var(--primary);
+}
+
+.tx-filter.active .tx-filter-value,
+.tx-filter.active::after {
+  color: var(--primary);
+}
+
+/* 一覧の見出し（月か日付）と、日付で絞り込み中の解除。カレンダーのないスマホ版でも解除できる */
+.tx-list-title {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tx-list-title > h2 {
+  margin: 0;
+}
+
+/* 解除の見た目と行の高さは変えずに、押せる範囲だけを上下に広げて高さ 44px 以上にする */
+.tx-list-title > button {
+  position: relative;
+}
+
+.tx-list-title > button::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
 }
 
 /* 取引一覧のカレンダーは PC 版でだけ出す */
@@ -771,6 +851,18 @@ button.drag-handle > svg {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   }
 
+  /* 一覧の行はカードで囲まないので、押せることをマウスを乗せたときの背景で示す */
+  /* 押せる範囲と背景は行の上下・左右まで広げ、文字の位置は見出しとそろえたままにする */
+  .tx-row {
+    width: calc(100% + 16px);
+    margin: -10px -8px;
+    padding: 10px 8px;
+  }
+
+  .tx-row:hover {
+    background: var(--surface-2);
+  }
+
   /* 右列の一覧をスクロールしても、左列の月の切り替えとカレンダーは見えたままにする */
   .tx-columns > .tx-col:first-child {
     position: sticky;
@@ -790,8 +882,9 @@ button.drag-handle > svg {
     border-bottom: 1px solid var(--border);
   }
 
+  /* 曜日・日付・金額の左端をそろえる（左右の余白は日の枠と同じ） */
   .tx-calendar-weekday {
-    padding: 0 6px 4px;
+    padding: 0 clamp(4px, 1cqi, 10px) 4px;
     color: var(--text-muted);
     font-size: 0.75rem;
   }
@@ -811,7 +904,8 @@ button.drag-handle > svg {
     border-width: 1px 0 0;
     border-radius: 0;
     background: none;
-    text-align: right;
+    /* 金額は日付の真下に置き、右隣の日の日付に寄せない */
+    text-align: left;
     /* 狭い画面（枠が約 80px）でも 6 桁（-¥128,000）が収まる大きさから、広い画面では大きくする */
     font-size: clamp(0.7rem, 1.5cqi, 0.95rem);
     letter-spacing: -0.01em;
@@ -824,7 +918,6 @@ button.drag-handle > svg {
   }
 
   .tx-calendar-date {
-    text-align: left;
     font-size: clamp(0.85rem, 1.6cqi, 1rem);
   }
 

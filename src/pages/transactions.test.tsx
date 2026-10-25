@@ -42,6 +42,16 @@ const chip = (group: HTMLElement, name: string) => within(group).getByRole('butt
 
 const categoryChipNames = () => chipNames(screen.getByRole('group', { name: 'カテゴリ' }));
 
+/** 取引一覧の絞り込みの選択肢の名前 */
+const optionNames = (select: HTMLElement) =>
+  within(select)
+    .getAllByRole('option')
+    .map((o) => o.textContent);
+
+/** 取引一覧の絞り込みで選択中の値 */
+const selectedName = (select: HTMLElement) =>
+  (select as HTMLSelectElement).selectedOptions[0]?.textContent;
+
 beforeEach(resetDb);
 afterEach(() => vi.restoreAllMocks());
 
@@ -459,22 +469,24 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
       .map((li) => li.textContent ?? '');
   const rowDates = () => rowTexts().map((t) => t.slice(0, 5));
 
-  const categoryGroup = () => screen.getByRole('group', { name: 'カテゴリ' });
-  const accountGroup = () => screen.getByRole('group', { name: '支払元' });
-
-  /** チップ群の中で選択状態のチップの名前 */
-  const pressed = (group: HTMLElement) =>
-    within(group)
-      .getAllByRole('button')
-      .filter((b) => b.getAttribute('aria-pressed') === 'true')
-      .map((b) => b.textContent);
+  const categorySelect = () => screen.getByRole('combobox', { name: 'カテゴリ' });
+  const accountSelect = () => screen.getByRole('combobox', { name: '支払元' });
 
   it('絞り込みなしで開くと、両方の「すべて」が選ばれ、すべての取引を表示する', async () => {
     await setupFilters();
     await renderList('/transactions');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    expect(pressed(categoryGroup())).toEqual(['すべて']);
-    expect(pressed(accountGroup())).toEqual(['すべて']);
+    expect(selectedName(categorySelect())).toBe('すべて');
+    expect(selectedName(accountSelect())).toBe('すべて');
+  });
+
+  it('カテゴリ名・口座名の選択肢をボタンとして一覧の上に並べない', async () => {
+    await setupFilters();
+    await renderList('/transactions');
+    await waitFor(() => expect(rowTexts()).toHaveLength(7));
+    expect(screen.queryByRole('group', { name: 'カテゴリ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '食費' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '財布' })).toBeNull();
   });
 
   it('カテゴリには表示中の出費カテゴリを並べ、未分類の出費がある月だけ「未分類」を足す', async () => {
@@ -482,7 +494,7 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await setCategoryHidden(cat('Amazon'), true);
     const { user } = await renderList('/transactions');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    expect(chipNames(categoryGroup())).toEqual([
+    expect(optionNames(categorySelect())).toEqual([
       'すべて',
       '食費',
       '日用品',
@@ -497,7 +509,7 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     // 9月にはカテゴリのない出費がない
     await user.click(screen.getByRole('button', { name: '前月' }));
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
-    expect(chipNames(categoryGroup())).not.toContain('未分類');
+    expect(optionNames(categorySelect())).not.toContain('未分類');
   });
 
   it('支払元にはクレジットカードを含む表示中の口座を並べ、非表示の口座は出さない', async () => {
@@ -505,7 +517,7 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await setAccountHidden(suica, true);
     await renderList('/transactions');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    expect(chipNames(accountGroup())).toEqual(['すべて', '財布', 'A銀行', 'Aカード']);
+    expect(optionNames(accountSelect())).toEqual(['すべて', '財布', 'A銀行', 'Aカード']);
   });
 
   it('非表示のカテゴリ・口座でも、それで絞り込んでいるあいだは選択状態で残す', async () => {
@@ -514,26 +526,26 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await setAccountHidden(card, true);
     await renderList(`/transactions?category=${cat('食費')}&account=${card}`);
     await waitFor(() => expect(rowTexts()).toHaveLength(1));
-    expect(pressed(categoryGroup())).toEqual(['食費']);
-    expect(pressed(accountGroup())).toEqual(['Aカード']);
+    expect(selectedName(categorySelect())).toBe('食費');
+    expect(selectedName(accountSelect())).toBe('Aカード');
   });
 
   it('カテゴリを選ぶと、その月のそのカテゴリの出費だけを新しい順に表示する', async () => {
     await setupFilters();
     const { user } = await renderList('/transactions');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    await user.click(chip(categoryGroup(), '食費'));
+    await user.selectOptions(categorySelect(), '食費');
     await waitFor(() => expect(rowDates()).toEqual(['10/08', '10/04', '10/03']));
-    expect(pressed(categoryGroup())).toEqual(['食費']);
+    expect(selectedName(categorySelect())).toBe('食費');
   });
 
   it('支払元を選ぶと、その口座から払った出費だけを表示し、収入・振替は出さない', async () => {
     await setupFilters();
     const { user } = await renderList('/transactions');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    await user.click(chip(accountGroup(), '財布'));
+    await user.selectOptions(accountSelect(), '財布');
     await waitFor(() => expect(rowDates()).toEqual(['10/08', '10/06', '10/05', '10/03']));
-    expect(pressed(accountGroup())).toEqual(['財布']);
+    expect(selectedName(accountSelect())).toBe('財布');
   });
 
   it('URL で支払元を指定して開ける', async () => {
@@ -552,18 +564,18 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     const { cat, wallet } = await setupFilters();
     const { user } = await renderList(`/transactions?category=${cat('食費')}&account=${wallet}`);
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
-    await user.click(chip(categoryGroup(), 'すべて'));
+    await user.selectOptions(categorySelect(), 'すべて');
     await waitFor(() => expect(rowTexts()).toHaveLength(4));
-    expect(pressed(categoryGroup())).toEqual(['すべて']);
-    expect(pressed(accountGroup())).toEqual(['財布']);
+    expect(selectedName(categorySelect())).toBe('すべて');
+    expect(selectedName(accountSelect())).toBe('財布');
   });
 
   it('両方を「すべて」にすると、収入・振替を含むすべての取引を表示する', async () => {
     const { cat, wallet } = await setupFilters();
     const { user } = await renderList(`/transactions?category=${cat('食費')}&account=${wallet}`);
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
-    await user.click(chip(categoryGroup(), 'すべて'));
-    await user.click(chip(accountGroup(), 'すべて'));
+    await user.selectOptions(categorySelect(), 'すべて');
+    await user.selectOptions(accountSelect(), 'すべて');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
   });
 
@@ -571,7 +583,7 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await setupFilters();
     const { user } = await renderList('/transactions');
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    await user.click(chip(categoryGroup(), '未分類'));
+    await user.selectOptions(categorySelect(), '未分類');
     await waitFor(() => expect(rowDates()).toEqual(['10/06']));
   });
 
@@ -581,17 +593,17 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await waitFor(() => expect(rowDates()).toEqual(['10/04']));
     await user.click(screen.getByRole('button', { name: '前月' }));
     await waitFor(() => expect(rowDates()).toEqual(['09/15']));
-    expect(pressed(accountGroup())).toEqual(['Aカード']);
+    expect(selectedName(accountSelect())).toBe('Aカード');
   });
 
   it('条件に合う出費がない月は、その旨を表示し、選択肢は残す', async () => {
     const { cat } = await setupFilters();
     const { user } = await renderList(`/transactions?category=${cat('外食')}`);
     expect(await screen.findByText('条件に合う出費はありません')).toBeInTheDocument();
-    expect(pressed(categoryGroup())).toEqual(['外食']);
+    expect(selectedName(categorySelect())).toBe('外食');
     await user.click(screen.getByRole('button', { name: '前月' }));
     expect(await screen.findByText('条件に合う出費はありません')).toBeInTheDocument();
-    expect(pressed(accountGroup())).toEqual(['すべて']);
+    expect(selectedName(accountSelect())).toBe('すべて');
   });
 
   it('絞り込んだ一覧から編集して保存すると、同じ絞り込みの一覧に戻る', async () => {
@@ -607,8 +619,8 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await screen.findByRole('heading', { level: 1, name: '取引一覧' });
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
     expect(rowTexts()[0]).toContain('1,200');
-    expect(pressed(categoryGroup())).toEqual(['食費']);
-    expect(pressed(accountGroup())).toEqual(['財布']);
+    expect(selectedName(categorySelect())).toBe('食費');
+    expect(selectedName(accountSelect())).toBe('財布');
   });
 
   it('絞り込んだ一覧から削除しても、同じ絞り込みの一覧に戻る', async () => {
@@ -621,7 +633,7 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
 
     await screen.findByRole('heading', { level: 1, name: '取引一覧' });
     await waitFor(() => expect(rowTexts()).toHaveLength(2));
-    expect(pressed(categoryGroup())).toEqual(['食費']);
+    expect(selectedName(categorySelect())).toBe('食費');
   });
 
   it('下部タブの「取引一覧」からは絞り込みなしで開く', async () => {
@@ -630,8 +642,8 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await waitFor(() => expect(rowTexts()).toHaveLength(4));
     await user.click(screen.getByRole('link', { name: /取引一覧/ }));
     await waitFor(() => expect(rowTexts()).toHaveLength(7));
-    expect(pressed(categoryGroup())).toEqual(['すべて']);
-    expect(pressed(accountGroup())).toEqual(['すべて']);
+    expect(selectedName(categorySelect())).toBe('すべて');
+    expect(selectedName(accountSelect())).toBe('すべて');
   });
 });
 
@@ -857,7 +869,7 @@ describe('取引一覧のカレンダー', () => {
     within(screen.getByRole('region', { name: '取引' }))
       .queryAllByRole('listitem')
       .map((li) => (li.textContent ?? '').slice(0, 5));
-  const categoryGroup = () => screen.getByRole('group', { name: 'カテゴリ' });
+  const categorySelect = () => screen.getByRole('combobox', { name: 'カテゴリ' });
 
   it('日の枠に出費・収入の合計を出し、振替は含めない', async () => {
     await setupDays();
@@ -902,7 +914,7 @@ describe('取引一覧のカレンダー', () => {
     await setupDays();
     const { user } = await renderList('/transactions');
     await waitFor(() => expect(rowDates()).toHaveLength(5));
-    await user.click(chip(categoryGroup(), '食費'));
+    await user.selectOptions(categorySelect(), '食費');
     await waitFor(() => expect(dayCell('10月5日')).toHaveAccessibleName('10月5日 出費 ¥800'));
   });
 
@@ -942,7 +954,7 @@ describe('取引一覧のカレンダー', () => {
     const { user } = await renderList('/transactions');
     await waitFor(() => expect(rowDates()).toHaveLength(5));
     await user.click(dayCell('10月5日'));
-    await user.click(chip(categoryGroup(), '食費'));
+    await user.selectOptions(categorySelect(), '食費');
     await waitFor(() => expect(rowDates()).toEqual(['10/05']));
     expect(dayCell('10月5日')).toHaveAttribute('aria-pressed', 'true');
   });
@@ -955,13 +967,50 @@ describe('取引一覧のカレンダー', () => {
     expect(await screen.findByText('この日の取引はありません')).toBeInTheDocument();
   });
 
+  const expenseTotal = () => screen.getByTestId('tx-expense-total');
+
+  it('一覧の見出しに月と、振替・収入を除いた出費の合計を出す', async () => {
+    await setupDays();
+    await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    expect(screen.getByRole('heading', { level: 2, name: '10月の取引' })).toBeInTheDocument();
+    expect(expenseTotal()).toHaveTextContent('¥2,500');
+  });
+
+  it('日付で絞り込むと、見出しと合計がその日のものになる', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.click(dayCell('10月5日'));
+    expect(
+      await screen.findByRole('heading', { level: 2, name: '10月5日の取引' }),
+    ).toBeInTheDocument();
+    expect(expenseTotal()).toHaveTextContent('¥2,000');
+  });
+
+  it('カテゴリで絞り込むと、合計がその条件の出費になる', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.selectOptions(categorySelect(), '食費');
+    await waitFor(() => expect(expenseTotal()).toHaveTextContent('¥1,300'));
+  });
+
+  it('出費のない日で絞り込むと、合計は ¥0 になる', async () => {
+    await setupDays();
+    await renderList('/transactions?date=2026-10-06');
+    expect(await screen.findByText('この日の取引はありません')).toBeInTheDocument();
+    expect(expenseTotal()).toHaveTextContent('¥0');
+  });
+
   it('月を切り替えると日付の絞り込みが外れる', async () => {
     await setupDays();
     const { user } = await renderList('/transactions?date=2026-10-05');
     await waitFor(() => expect(rowDates()).toHaveLength(4));
     await user.click(screen.getByRole('button', { name: '前月' }));
     await waitFor(() => expect(rowDates()).toEqual(['09/05']));
-    expect(screen.queryByText(/の取引$/)).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: '9月の取引' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '日付の絞り込みを解除' })).toBeNull();
     // 元の月に戻っても日付の絞り込みは戻らない
     await user.click(screen.getByRole('button', { name: '次月' }));
     await waitFor(() => expect(rowDates()).toHaveLength(5));

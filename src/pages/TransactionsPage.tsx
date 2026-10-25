@@ -37,34 +37,40 @@ function matchesAccount(tx: Transaction, account: string | null): boolean {
   return tx.type === 'expense' && tx.accountId === account;
 }
 
-interface FilterChipsProps {
+interface FilterSelectProps {
   label: string;
   options: { id: string; name: string }[];
   selected: string | null;
   onSelect: (id: string | null) => void;
 }
 
-/** 先頭に「すべて」を置いた絞り込みの選択肢 */
-function FilterChips({ label, options, selected, onSelect }: FilterChipsProps) {
+/**
+ * 名前と選択中の値を 1 つのボタンの形で見せ、押すと選択肢が開く絞り込み。先頭は「すべて」。
+ * 見える文字は span で描き、透明な select をボタン全体に重ねて、どこを押しても選択肢が開くようにする
+ */
+function FilterSelect({ label, options, selected, onSelect }: FilterSelectProps) {
+  const selectedName = options.find((o) => o.id === selected)?.name ?? 'すべて';
   return (
-    <div className="field">
-      <span>{label}</span>
-      <div className="chips" role="group" aria-label={label}>
-        <button type="button" aria-pressed={selected === null} onClick={() => onSelect(null)}>
-          すべて
-        </button>
+    <label className={`tx-filter${selected === null ? '' : ' active'}`}>
+      <span className="tx-filter-name" aria-hidden="true">
+        {label}
+      </span>
+      <span className="tx-filter-value" aria-hidden="true">
+        {selectedName}
+      </span>
+      <select
+        aria-label={label}
+        value={selected ?? ''}
+        onChange={(e) => onSelect(e.target.value || null)}
+      >
+        <option value="">すべて</option>
         {options.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            aria-pressed={selected === o.id}
-            onClick={() => onSelect(o.id)}
-          >
+          <option key={o.id} value={o.id}>
             {o.name}
-          </button>
+          </option>
         ))}
-      </div>
-    </div>
+      </select>
+    </label>
   );
 }
 
@@ -157,19 +163,19 @@ export function TransactionsPage() {
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 
   // 非表示のカテゴリ・口座も、それで絞り込んでいるあいだは選択肢に残す
-  const categoryOptions = categories.filter(
+  const expenseCategories = categories.filter(
     (c) => c.kind === 'expense' && (!c.hidden || c.id === category),
   );
   const hasUncategorized = monthTransactions.some((tx) => tx.type === 'expense' && !tx.categoryId);
-  const categoryChips = [
-    ...categoryOptions,
+  const categoryOptions = [
+    ...expenseCategories,
     ...(hasUncategorized || category === UNCATEGORIZED
       ? [{ id: UNCATEGORIZED, name: '未分類' }]
       : []),
   ];
-  const accountChips = accounts.filter((a) => !a.hidden || a.id === account);
+  const accountOptions = accounts.filter((a) => !a.hidden || a.id === account);
 
-  /** もう一方の条件は残したまま、押した条件だけを変える */
+  /** もう一方の条件は残したまま、選んだ条件だけを変える */
   const setFilter = (key: 'category' | 'account' | 'date', value: string | null) =>
     setSearchParams(
       (prev) => {
@@ -178,7 +184,7 @@ export function TransactionsPage() {
         else next.set(key, value);
         return next;
       },
-      // チップを押すたびに履歴を増やさず、戻る操作で前の画面へ戻れるようにする
+      // 選ぶたびに履歴を増やさず、戻る操作で前の画面へ戻れるようにする
       { replace: true },
     );
 
@@ -188,6 +194,10 @@ export function TransactionsPage() {
     // setFilter は描画のたびに作り直されるので依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateParam, month]);
+
+  const expenseTotal = rows
+    .filter((tx) => tx.type === 'expense')
+    .reduce((sum, tx) => sum + tx.amount, 0);
 
   const emptyMessage = filtered
     ? '条件に合う出費はありません'
@@ -213,34 +223,45 @@ export function TransactionsPage() {
         <div className="tx-col">
           {data && (
             <div className="tx-filters">
-              <FilterChips
+              <FilterSelect
                 label="カテゴリ"
-                options={categoryChips}
+                options={categoryOptions}
                 selected={category}
                 onSelect={(id) => setFilter('category', id)}
               />
-              <FilterChips
+              <FilterSelect
                 label="支払元"
-                options={accountChips}
+                options={accountOptions}
                 selected={account}
                 onSelect={(id) => setFilter('account', id)}
               />
             </div>
           )}
-          {day !== null && (
-            <div className="tx-day-filter">
-              <span>{formatDayLabel(day)}の取引</span>
-              <button
-                type="button"
-                className="link"
-                aria-label="日付の絞り込みを解除"
-                onClick={() => setFilter('date', null)}
-              >
-                解除
-              </button>
+          {/* 見出しと、表示中の取引の出費の合計を同じ行に置く */}
+          <div className="section-head">
+            <div className="tx-list-title">
+              <h2>
+                {day === null
+                  ? `${Number(month.slice(5))}月の取引`
+                  : `${formatDayLabel(day)}の取引`}
+              </h2>
+              {day !== null && (
+                <button
+                  type="button"
+                  className="link"
+                  aria-label="日付の絞り込みを解除"
+                  onClick={() => setFilter('date', null)}
+                >
+                  解除
+                </button>
+              )}
             </div>
-          )}
-          <section className="card" aria-label="取引">
+            <span className="amount" data-testid="tx-expense-total">
+              <span className="muted">出費 </span>
+              {formatYen(expenseTotal)}
+            </span>
+          </div>
+          <section aria-label="取引">
             {transactions && rows.length === 0 && <p className="empty">{emptyMessage}</p>}
             <ul className="list">
               {rows.map((tx) => {
