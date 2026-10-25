@@ -1,12 +1,15 @@
 import { useEffect } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { CategoryExpenses } from '../components/CategoryExpenses';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { calendarWeeks, dailyTotals } from '../domain/calendar';
 import { todayString } from '../domain/date';
 import { formatYen } from '../domain/format';
+import { summarizeMonth, UNCATEGORIZED } from '../domain/summary';
 import { TRANSACTION_TYPE_LABELS, type Transaction } from '../domain/types';
 import { useAllData } from '../hooks/useData';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 function signedAmount(tx: Transaction): { text: string; className: string } {
   switch (tx.type) {
@@ -20,9 +23,6 @@ function signedAmount(tx: Transaction): { text: string; className: string } {
       return { text: (tx.amount > 0 ? '+' : '') + formatYen(tx.amount), className: '' };
   }
 }
-
-/** カテゴリのない出費で絞り込むときの `category` の値 */
-export const UNCATEGORIZED = 'none';
 
 /** 出費をカテゴリで絞り込む。`category` が未指定なら絞り込まない */
 function matchesCategory(tx: Transaction, category: string | null): boolean {
@@ -145,6 +145,14 @@ export function TransactionsPage() {
   // 選択中の月に含まれない日付（月を切り替えた直後など）では絞り込まない
   const dateParam = searchParams.get('date');
   const day = dateParam?.startsWith(`${month}-`) ? dateParam : null;
+  const isDesktop = useIsDesktop();
+  // スマホ版では、絞り込みも全取引の一覧（view=list）も求めていなければカテゴリ別の出費を出す
+  const showBreakdown =
+    !isDesktop &&
+    category === null &&
+    account === null &&
+    dateParam === null &&
+    searchParams.get('view') !== 'list';
   const data = useAllData();
   const accounts = data?.accounts ?? [];
   const categories = data?.categories ?? [];
@@ -182,6 +190,8 @@ export function TransactionsPage() {
         const next = new URLSearchParams(prev);
         if (value === null) next.delete(key);
         else next.set(key, value);
+        // スマホ版で条件をすべて外しても、カテゴリ別の出費に戻らず一覧のままにする
+        if (!isDesktop) next.set('view', 'list');
         return next;
       },
       // 選ぶたびに履歴を増やさず、戻る操作で前の画面へ戻れるようにする
@@ -204,6 +214,26 @@ export function TransactionsPage() {
     : day !== null
       ? 'この日の取引はありません'
       : 'この月の取引はありません';
+
+  if (showBreakdown) {
+    const summary = data && summarizeMonth(month, data.transactions, accounts, categories);
+    return (
+      <>
+        {/* タブで選択中の画面名と重なるので、見出しは読み上げ用にだけ残す */}
+        <h1 className="visually-hidden">出費</h1>
+        <MonthSwitcher />
+        {summary && (
+          <>
+            <CategoryExpenses byCategory={summary.byCategory} total={summary.expense} />
+            {/* 収入・振替・残高調整を開いて直せるよう、月のすべての取引の一覧へ移れるようにする */}
+            <p className="all-tx-link">
+              <Link to="/transactions?view=list">すべての取引</Link>
+            </p>
+          </>
+        )}
+      </>
+    );
+  }
 
   return (
     <>

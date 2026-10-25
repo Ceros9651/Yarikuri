@@ -326,6 +326,17 @@ button:disabled {
   font-weight: 700;
 }
 
+/* スマホ版の「出費」タブの、カテゴリ別の出費の下に置く全取引の一覧への入口 */
+.all-tx-link {
+  margin: -16px 0 0;
+}
+
+.all-tx-link > a {
+  display: inline-block;
+  padding: 8px 0;
+  color: var(--primary);
+}
+
 /* 画面には出さず、読み上げでだけ読ませる */
 .visually-hidden {
   position: absolute;

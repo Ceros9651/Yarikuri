@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import type { BudgetAlert } from '../domain/budget';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 /** タブの線画アイコン。色は文字と同じ（currentColor）で、選択中は文字と一緒に緑になる */
 function TabIcon({ children }: { children: ReactNode }) {
@@ -22,7 +23,7 @@ function TabIcon({ children }: { children: ReactNode }) {
   );
 }
 
-const TABS = [
+const TABS: { to: string; label: string; mobileLabel?: string; end: boolean; icon: ReactNode }[] = [
   {
     to: '/',
     label: 'ホーム',
@@ -38,6 +39,8 @@ const TABS = [
   {
     to: '/transactions',
     label: '取引一覧',
+    // スマホ版ではこの画面がカテゴリ別の出費を出すので、下部タブでは「出費」と呼ぶ
+    mobileLabel: '出費',
     end: false,
     icon: (
       <TabIcon>
@@ -98,6 +101,7 @@ function BudgetAlertNotice() {
 }
 
 export function Layout() {
+  const isDesktop = useIsDesktop();
   return (
     <div className="app">
       <main className="content">
@@ -112,7 +116,7 @@ export function Layout() {
             <span className="tab-icon" aria-hidden="true">
               {tab.icon}
             </span>
-            <span>{tab.label}</span>
+            <span>{isDesktop ? tab.label : (tab.mobileLabel ?? tab.label)}</span>
           </NavLink>
         ))}
       </nav>

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { CategoryExpenses } from '../components/CategoryExpenses';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
 import { computeBalances } from '../domain/balance';
@@ -8,11 +9,12 @@ import { formatYen } from '../domain/format';
 import { summarizeMonth } from '../domain/summary';
 import { isAssetAccount } from '../domain/types';
 import { useAllData } from '../hooks/useData';
-import { UNCATEGORIZED } from './TransactionsPage';
+import { useIsDesktop } from '../hooks/useIsDesktop';
 
 export function HomePage() {
   const { month } = useMonth();
   const data = useAllData();
+  const isDesktop = useIsDesktop();
   if (!data) {
     return (
       <>
@@ -30,6 +32,69 @@ export function HomePage() {
   const balances = computeBalances(assetAccounts, transactions, lastDayOfMonth(month));
   const totalBalance = [...balances.values()].reduce((sum, b) => sum + b, 0);
 
+  const budgetsSection = (
+    <section className="home-section" aria-labelledby="budgets-heading">
+      <h2 id="budgets-heading">予算</h2>
+      {budgetUsages.length === 0 ? (
+        <p className="empty">
+          この月の予算はありません。<Link to="/settings">設定</Link>
+          でカテゴリごとに予算を決められます
+        </p>
+      ) : (
+        <ul className="list">
+          {budgetUsages.map((b) => (
+            <li
+              key={b.categoryId}
+              className={`bar-row budget-${b.status}`}
+              data-testid={`budget-${b.name}`}
+            >
+              <span className="budget-head">
+                <span className="truncate">{b.name}</span>
+                {b.status !== 'normal' && (
+                  <span className="budget-badge">{BUDGET_STATUS_LABELS[b.status]}</span>
+                )}
+              </span>
+              <span className="amount">
+                {formatYen(b.spent)} / {formatYen(b.budget)}
+              </span>
+              <span className="budget-sub amount">
+                {b.remaining >= 0
+                  ? `残り ${formatYen(b.remaining)}`
+                  : `${formatYen(-b.remaining)} 超過`}
+                ・{b.percent}%
+              </span>
+              <span className="bar-track" aria-hidden="true">
+                <span
+                  className="bar-fill"
+                  style={{ width: `${Math.min(b.percent, 100)}%`, display: 'block' }}
+                />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+
+  const balancesSection = (
+    <section className="home-section" aria-labelledby="balances-heading">
+      <div className="section-head">
+        <h2 id="balances-heading">残高</h2>
+        <span className="amount" data-testid="balance-total">
+          {formatYen(totalBalance)}
+        </span>
+      </div>
+      <ul className="list">
+        {assetAccounts.map((a) => (
+          <li key={a.id}>
+            <span className="truncate">{a.name}</span>
+            <span className="amount">{formatYen(balances.get(a.id) ?? 0)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+
   return (
     <>
       {/* タブで選択中の画面名と重なるので、見出しは読み上げ用にだけ残す */}
@@ -42,7 +107,7 @@ export function HomePage() {
         </p>
       )}
 
-      {/* PC 版では左列に収支とカテゴリ、右列にカード・予算・残高を並べる。スマホ版ではそのまま縦に続く */}
+      {/* PC 版では左列に収支とカテゴリ、右列にカード・予算・残高を並べる。スマホ版では収支・カード・残高・予算の順に縦に続く */}
       <div className="home-columns">
         <div className="home-col">
           {/* いちばん知りたい差額を主数字にし、収入・出費はその内訳として添える */}
@@ -70,35 +135,8 @@ export function HomePage() {
             </ul>
           </section>
 
-          <section className="home-section" aria-labelledby="categories-heading">
-            <h2 id="categories-heading">カテゴリ別の出費</h2>
-            {summary.byCategory.length === 0 ? (
-              <p className="empty">この月の出費はありません</p>
-            ) : (
-              <ul className="list">
-                {summary.byCategory.map((c) => (
-                  <li key={c.categoryId} className="bar-link-row">
-                    {/* カテゴリの中身を確かめられるよう、そのカテゴリで絞り込んだ取引一覧へ移る */}
-                    <Link
-                      className="bar-link"
-                      to={`/transactions?category=${c.categoryId || UNCATEGORIZED}`}
-                    >
-                      <span className="truncate">{c.name}</span>
-                      <span className="amount">
-                        {formatYen(c.amount)}（{c.percent}%）
-                      </span>
-                      <span className="bar-track" aria-hidden="true">
-                        <span
-                          className="bar-fill"
-                          style={{ width: `${c.percent}%`, display: 'block' }}
-                        />
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          {/* スマホ版のカテゴリ別の出費は「出費」タブに置く */}
+          {isDesktop && <CategoryExpenses byCategory={summary.byCategory} />}
         </div>
 
         <div className="home-col">
@@ -125,64 +163,18 @@ export function HomePage() {
             )}
           </section>
 
-          <section className="home-section" aria-labelledby="budgets-heading">
-            <h2 id="budgets-heading">予算</h2>
-            {budgetUsages.length === 0 ? (
-              <p className="empty">
-                この月の予算はありません。<Link to="/settings">設定</Link>
-                でカテゴリごとに予算を決められます
-              </p>
-            ) : (
-              <ul className="list">
-                {budgetUsages.map((b) => (
-                  <li
-                    key={b.categoryId}
-                    className={`bar-row budget-${b.status}`}
-                    data-testid={`budget-${b.name}`}
-                  >
-                    <span className="budget-head">
-                      <span className="truncate">{b.name}</span>
-                      {b.status !== 'normal' && (
-                        <span className="budget-badge">{BUDGET_STATUS_LABELS[b.status]}</span>
-                      )}
-                    </span>
-                    <span className="amount">
-                      {formatYen(b.spent)} / {formatYen(b.budget)}
-                    </span>
-                    <span className="budget-sub amount">
-                      {b.remaining >= 0
-                        ? `残り ${formatYen(b.remaining)}`
-                        : `${formatYen(-b.remaining)} 超過`}
-                      ・{b.percent}%
-                    </span>
-                    <span className="bar-track" aria-hidden="true">
-                      <span
-                        className="bar-fill"
-                        style={{ width: `${Math.min(b.percent, 100)}%`, display: 'block' }}
-                      />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="home-section" aria-labelledby="balances-heading">
-            <div className="section-head">
-              <h2 id="balances-heading">残高</h2>
-              <span className="amount" data-testid="balance-total">
-                {formatYen(totalBalance)}
-              </span>
-            </div>
-            <ul className="list">
-              {assetAccounts.map((a) => (
-                <li key={a.id}>
-                  <span className="truncate">{a.name}</span>
-                  <span className="amount">{formatYen(balances.get(a.id) ?? 0)}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+          {/* スマホ版では残高を予算より上に置く。PC 版の右列はカード・予算・残高の順 */}
+          {isDesktop ? (
+            <>
+              {budgetsSection}
+              {balancesSection}
+            </>
+          ) : (
+            <>
+              {balancesSection}
+              {budgetsSection}
+            </>
+          )}
         </div>
       </div>
 

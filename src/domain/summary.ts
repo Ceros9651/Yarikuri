@@ -1,5 +1,8 @@
 import type { Account, Category, Transaction } from './types';
 
+/** カテゴリのない出費で取引一覧を絞り込むときの `category` の値 */
+export const UNCATEGORIZED = 'none';
+
 export interface CategoryBreakdown {
   categoryId: string;
   name: string;
