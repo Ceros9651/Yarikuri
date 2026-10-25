@@ -649,9 +649,29 @@ button.drag-handle > svg {
   margin-bottom: 0;
 }
 
+/* 日付で絞り込み中の表示。カレンダーのないスマホ版でも出し、ここから解除できるようにする */
+.tx-day-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/* 解除の文字の右端を、下の一覧の枠の右端にそろえる */
+.tx-day-filter > button {
+  padding-right: 0;
+}
+
+/* 取引一覧のカレンダーは PC 版でだけ出す */
+.tx-calendar {
+  display: none;
+}
+
 /*
  * PC 版（画面幅 1024px 以上）
- * 下部タブバー（.tab-bar）を画面左に固定したサイドバーとして見せ、本文はその右に左寄せで置く。
+ * 下部タブバー（.tab-bar）を画面左に固定したサイドバーとして見せ、本文はその右に置く。
  * DOM はスマホ版と同じで、見た目だけをここで切り替える
  */
 @media (min-width: 1024px) {
@@ -666,9 +686,10 @@ button.drag-handle > svg {
     padding: 32px 40px 48px;
   }
 
-  /* ホームは 2 列にするので広げる */
-  .content:has(.home-columns) {
-    max-width: 1040px;
+  /* ホームと取引一覧は 2 列にし、広い画面で右が空かないよう画面幅いっぱいに広げる */
+  .content:has(.home-columns),
+  .content:has(.tx-columns) {
+    max-width: none;
   }
 
   /* .tab-bar はここではサイドバー */
@@ -737,10 +758,93 @@ button.drag-handle > svg {
   }
 
   /* 列の間は罫線を引かず余白で区切る。各列は上詰め */
-  .home-columns {
+  .home-columns,
+  .tx-columns {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     column-gap: 48px;
     align-items: start;
+  }
+
+  /* 取引一覧はカレンダーの列を広くし、日の枠と金額を大きく見せる */
+  .tx-columns {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  /* 右列の一覧をスクロールしても、左列の月の切り替えとカレンダーは見えたままにする */
+  .tx-columns > .tx-col:first-child {
+    position: sticky;
+    top: 32px;
+  }
+
+  /* 週の区切りは横の 1px の罫線だけにし、日の枠を箱で囲まない */
+  .tx-calendar {
+    display: block;
+    /* 日の枠の高さと文字の大きさを、カレンダーの幅（cqi）に合わせて変える */
+    container-type: inline-size;
+  }
+
+  .tx-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tx-calendar-weekday {
+    padding: 0 6px 4px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .tx-calendar-day,
+  .tx-calendar-blank {
+    min-height: clamp(64px, 11cqi, 112px);
+    border-top: 1px solid var(--border);
+  }
+
+  .tx-calendar-day {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 4px clamp(4px, 1cqi, 10px) 6px;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    background: none;
+    text-align: right;
+    /* 狭い画面（枠が約 80px）でも 6 桁（-¥128,000）が収まる大きさから、広い画面では大きくする */
+    font-size: clamp(0.7rem, 1.5cqi, 0.95rem);
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+
+  .tx-calendar-day .amount {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tx-calendar-date {
+    text-align: left;
+    font-size: clamp(0.85rem, 1.6cqi, 1rem);
+  }
+
+  .tx-calendar-day:hover .tx-calendar-date {
+    color: var(--primary);
+  }
+
+  .tx-calendar-day[aria-current='date'] .tx-calendar-date {
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* 選択中の日だけをアクセント色で示す（日付の数字と、枠の上の罫線） */
+  .tx-calendar-day[aria-pressed='true'] {
+    box-shadow: inset 0 2px 0 var(--primary);
+  }
+
+  .tx-calendar-day[aria-pressed='true'] .tx-calendar-date {
+    color: var(--primary);
+    font-weight: 700;
   }
 }

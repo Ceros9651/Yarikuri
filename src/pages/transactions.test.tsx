@@ -811,3 +811,175 @@ describe('出費保存時の予算アラート', () => {
     );
   });
 });
+
+describe('取引一覧のカレンダー', () => {
+  async function setupDays() {
+    const ids = await setup();
+    const save = (
+      type: 'expense' | 'income',
+      date: string,
+      amount: string,
+      categoryId: string,
+      accountId = ids.wallet,
+    ) => saveTransaction({ type, date, amount, accountId, toAccountId: '', categoryId }, '');
+    await save('expense', '2026-10-05', '800', ids.cat('食費'));
+    await save('expense', '2026-10-05', '1200', ids.cat('日用品'));
+    await save('income', '2026-10-05', '3000', ids.cat('給与', 'income'), ids.bank);
+    await save('expense', '2026-10-08', '500', ids.cat('食費'));
+    await save('expense', '2026-09-05', '900', ids.cat('食費'));
+    await saveTransaction(
+      {
+        type: 'transfer',
+        date: '2026-10-05',
+        amount: '10000',
+        accountId: ids.bank,
+        toAccountId: ids.wallet,
+        categoryId: '',
+      },
+      '',
+    );
+    return ids;
+  }
+
+  /** 今日を 2026-10-10 にして取引一覧を開く */
+  async function renderList(path: string) {
+    vi.useFakeTimers({ now: new Date(2026, 9, 10), toFake: ['Date'] });
+    const result = await renderApp(path);
+    vi.useRealTimers();
+    return result;
+  }
+
+  const calendar = () => screen.getByRole('region', { name: 'カレンダー' });
+  /** カレンダーの日の枠。名前は「10月5日 出費 ¥2,000 収入 ¥3,000」の形なので、日付の部分で探す */
+  const dayCell = (label: string) =>
+    within(calendar()).getByRole('button', { name: new RegExp(`^${label}( |$)`) });
+  const rowDates = () =>
+    within(screen.getByRole('region', { name: '取引' }))
+      .queryAllByRole('listitem')
+      .map((li) => (li.textContent ?? '').slice(0, 5));
+  const categoryGroup = () => screen.getByRole('group', { name: 'カテゴリ' });
+
+  it('日の枠に出費・収入の合計を出し、振替は含めない', async () => {
+    await setupDays();
+    await renderList('/transactions');
+    await waitFor(() =>
+      expect(dayCell('10月5日')).toHaveAccessibleName('10月5日 出費 ¥2,000 収入 ¥3,000'),
+    );
+    expect(dayCell('10月5日')).toHaveTextContent('-¥2,000');
+    expect(dayCell('10月5日')).toHaveTextContent('+¥3,000');
+  });
+
+  it('取引のない日は日付だけを出す', async () => {
+    await setupDays();
+    await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    expect(dayCell('10月6日')).toHaveAccessibleName('10月6日');
+    expect(dayCell('10月6日')).toHaveTextContent(/^6$/);
+  });
+
+  it('月の日だけを枠に並べ、前後の月の日は出さない', async () => {
+    await setupDays();
+    await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    expect(within(calendar()).getAllByRole('button')).toHaveLength(31);
+    expect(within(calendar()).queryByRole('button', { name: /^(9|11)月/ })).toBeNull();
+  });
+
+  it('今日の日付の枠を区別する', async () => {
+    await setupDays();
+    vi.useFakeTimers({ now: new Date(2026, 9, 10), toFake: ['Date'] });
+    try {
+      await renderApp('/transactions');
+      await waitFor(() => expect(rowDates()).toHaveLength(5));
+      expect(dayCell('10月10日')).toHaveAttribute('aria-current', 'date');
+      expect(dayCell('10月9日')).not.toHaveAttribute('aria-current');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('カテゴリで絞り込むと、その出費だけを出し、収入は出さない', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.click(chip(categoryGroup(), '食費'));
+    await waitFor(() => expect(dayCell('10月5日')).toHaveAccessibleName('10月5日 出費 ¥800'));
+  });
+
+  it('月を切り替えると、その月の日の合計を出す', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.click(screen.getByRole('button', { name: '前月' }));
+    await waitFor(() => expect(dayCell('9月5日')).toHaveAccessibleName('9月5日 出費 ¥900'));
+  });
+
+  it('日の枠を押すとその日の取引だけを表示し、もう一度押すと解除する', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.click(dayCell('10月5日'));
+    await waitFor(() => expect(rowDates()).toEqual(['10/05', '10/05', '10/05', '10/05']));
+    expect(dayCell('10月5日')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('10月5日の取引')).toBeInTheDocument();
+
+    await user.click(dayCell('10月5日'));
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    expect(dayCell('10月5日')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('10月5日の取引')).toBeNull();
+  });
+
+  it('解除を押すと日付の絞り込みだけを外し、カテゴリの絞り込みは残す', async () => {
+    const { cat } = await setupDays();
+    const { user } = await renderList(`/transactions?category=${cat('食費')}&date=2026-10-05`);
+    await waitFor(() => expect(rowDates()).toEqual(['10/05']));
+    await user.click(screen.getByRole('button', { name: '日付の絞り込みを解除' }));
+    await waitFor(() => expect(rowDates()).toEqual(['10/08', '10/05']));
+  });
+
+  it('日付を選んでからカテゴリを選ぶと、両方に当てはまる出費だけを表示する', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.click(dayCell('10月5日'));
+    await user.click(chip(categoryGroup(), '食費'));
+    await waitFor(() => expect(rowDates()).toEqual(['10/05']));
+    expect(dayCell('10月5日')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('その日に取引がなければ、その旨を表示する', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+    await user.click(dayCell('10月6日'));
+    expect(await screen.findByText('この日の取引はありません')).toBeInTheDocument();
+  });
+
+  it('月を切り替えると日付の絞り込みが外れる', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions?date=2026-10-05');
+    await waitFor(() => expect(rowDates()).toHaveLength(4));
+    await user.click(screen.getByRole('button', { name: '前月' }));
+    await waitFor(() => expect(rowDates()).toEqual(['09/05']));
+    expect(screen.queryByText(/の取引$/)).toBeNull();
+    // 元の月に戻っても日付の絞り込みは戻らない
+    await user.click(screen.getByRole('button', { name: '次月' }));
+    await waitFor(() => expect(rowDates()).toHaveLength(5));
+  });
+
+  it('日付で絞り込んだ一覧から編集して保存すると、同じ日付の一覧に戻る', async () => {
+    await setupDays();
+    const { user } = await renderList('/transactions?date=2026-10-08');
+    await waitFor(() => expect(rowDates()).toEqual(['10/08']));
+    await user.click(screen.getByRole('button', { name: /10\/08/ }));
+    const amount = await screen.findByLabelText('金額');
+    await user.clear(amount);
+    await user.type(amount, '650');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    await screen.findByRole('heading', { level: 1, name: '取引一覧' });
+    await waitFor(() => expect(dayCell('10月8日')).toHaveAccessibleName('10月8日 出費 ¥650'));
+    expect(rowDates()).toEqual(['10/08']);
+    expect(screen.getByText('10月8日の取引')).toBeInTheDocument();
+  });
+});

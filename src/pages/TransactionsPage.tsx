@@ -1,6 +1,9 @@
+import { useEffect } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
+import { calendarWeeks, dailyTotals } from '../domain/calendar';
+import { todayString } from '../domain/date';
 import { formatYen } from '../domain/format';
 import { TRANSACTION_TYPE_LABELS, type Transaction } from '../domain/types';
 import { useAllData } from '../hooks/useData';
@@ -65,6 +68,66 @@ function FilterChips({ label, options, selected, onSelect }: FilterChipsProps) {
   );
 }
 
+/** '2026-10-05' → '10月5日' */
+function formatDayLabel(date: string): string {
+  const [, m, d] = date.split('-').map(Number);
+  return `${m}月${d}日`;
+}
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+interface CalendarProps {
+  month: string;
+  transactions: readonly Transaction[];
+  selected: string | null;
+  onSelect: (date: string) => void;
+}
+
+/** 月のカレンダー。各日の枠に出費・収入の合計を出し、押すとその日で絞り込む。スマホ版では CSS で隠す */
+function TransactionCalendar({ month, transactions, selected, onSelect }: CalendarProps) {
+  const totals = dailyTotals(transactions);
+  const today = todayString();
+  return (
+    <section className="tx-calendar" aria-label="カレンダー">
+      <div className="tx-calendar-grid">
+        {WEEKDAYS.map((w) => (
+          <span key={w} className="tx-calendar-weekday" aria-hidden="true">
+            {w}
+          </span>
+        ))}
+        {calendarWeeks(month)
+          .flat()
+          .map((date, i) => {
+            if (date === null) return <div key={`blank-${i}`} className="tx-calendar-blank" />;
+            const { expense = 0, income = 0 } = totals.get(date) ?? {};
+            const label = [
+              formatDayLabel(date),
+              expense > 0 ? `出費 ${formatYen(expense)}` : '',
+              income > 0 ? `収入 ${formatYen(income)}` : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+            return (
+              <button
+                key={date}
+                type="button"
+                className="tx-calendar-day"
+                aria-label={label}
+                aria-pressed={selected === date}
+                aria-current={date === today ? 'date' : undefined}
+                onClick={() => onSelect(date)}
+              >
+                <span className="tx-calendar-date">{Number(date.slice(8))}</span>
+                {expense > 0 && <span className="amount expense">-{formatYen(expense)}</span>}
+                {income > 0 && <span className="amount income">+{formatYen(income)}</span>}
+              </button>
+            );
+          })}
+      </div>
+    </section>
+  );
+}
+
 export function TransactionsPage() {
   const { month } = useMonth();
   const navigate = useNavigate();
@@ -73,6 +136,9 @@ export function TransactionsPage() {
   const category = searchParams.get('category');
   const account = searchParams.get('account');
   const filtered = category !== null || account !== null;
+  // 選択中の月に含まれない日付（月を切り替えた直後など）では絞り込まない
+  const dateParam = searchParams.get('date');
+  const day = dateParam?.startsWith(`${month}-`) ? dateParam : null;
   const data = useAllData();
   const accounts = data?.accounts ?? [];
   const categories = data?.categories ?? [];
@@ -82,8 +148,12 @@ export function TransactionsPage() {
   const categoryName = (id?: string) => categories.find((c) => c.id === id)?.name ?? '未分類';
 
   const monthTransactions = (transactions ?? []).filter((tx) => tx.date.startsWith(`${month}-`));
-  const rows = monthTransactions
-    .filter((tx) => matchesCategory(tx, category) && matchesAccount(tx, account))
+  // カレンダーの金額はカテゴリ・支払元の絞り込みに連動させ、日付では絞らない
+  const matched = monthTransactions.filter(
+    (tx) => matchesCategory(tx, category) && matchesAccount(tx, account),
+  );
+  const rows = matched
+    .filter((tx) => day === null || tx.date === day)
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 
   // 非表示のカテゴリ・口座も、それで絞り込んでいるあいだは選択肢に残す
@@ -100,7 +170,7 @@ export function TransactionsPage() {
   const accountChips = accounts.filter((a) => !a.hidden || a.id === account);
 
   /** もう一方の条件は残したまま、押した条件だけを変える */
-  const setFilter = (key: 'category' | 'account', value: string | null) =>
+  const setFilter = (key: 'category' | 'account' | 'date', value: string | null) =>
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -112,70 +182,106 @@ export function TransactionsPage() {
       { replace: true },
     );
 
+  // 月を切り替えたら、前の月の日付の絞り込みを URL からも消す
+  useEffect(() => {
+    if (dateParam !== null && !dateParam.startsWith(`${month}-`)) setFilter('date', null);
+    // setFilter は描画のたびに作り直されるので依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateParam, month]);
+
+  const emptyMessage = filtered
+    ? '条件に合う出費はありません'
+    : day !== null
+      ? 'この日の取引はありません'
+      : 'この月の取引はありません';
+
   return (
     <>
       <h1>取引一覧</h1>
-      <MonthSwitcher />
-      {data && (
-        <div className="tx-filters">
-          <FilterChips
-            label="カテゴリ"
-            options={categoryChips}
-            selected={category}
-            onSelect={(id) => setFilter('category', id)}
-          />
-          <FilterChips
-            label="支払元"
-            options={accountChips}
-            selected={account}
-            onSelect={(id) => setFilter('account', id)}
-          />
+      <div className="tx-columns">
+        <div className="tx-col">
+          <MonthSwitcher />
+          {data && (
+            <TransactionCalendar
+              month={month}
+              transactions={matched}
+              selected={day}
+              onSelect={(date) => setFilter('date', date === day ? null : date)}
+            />
+          )}
         </div>
-      )}
-      <section className="card" aria-label="取引">
-        {transactions && rows.length === 0 && (
-          <p className="empty">
-            {filtered ? '条件に合う出費はありません' : 'この月の取引はありません'}
-          </p>
-        )}
-        <ul className="list">
-          {rows.map((tx) => {
-            const amount = signedAmount(tx);
-            const title =
-              tx.type === 'transfer'
-                ? `${accountName(tx.accountId)} → ${accountName(tx.toAccountId)}`
-                : tx.type === 'adjustment'
-                  ? TRANSACTION_TYPE_LABELS.adjustment
-                  : categoryName(tx.categoryId);
-            const sub = [
-              TRANSACTION_TYPE_LABELS[tx.type],
-              tx.type === 'transfer' ? '' : accountName(tx.accountId),
-              tx.memo ?? '',
-            ]
-              .filter(Boolean)
-              .join('・');
-            return (
-              <li key={tx.id}>
-                <button
-                  type="button"
-                  className="tx-row"
-                  onClick={() =>
-                    // 編集後に同じ絞り込みの一覧へ戻れるようにする
-                    navigate(`/transactions/${tx.id}`, {
-                      state: { returnTo: `/transactions${location.search}` },
-                    })
-                  }
-                >
-                  <span className="tx-date">{tx.date.slice(5).replace('-', '/')}</span>
-                  <span className="truncate">{title}</span>
-                  <span className={`amount ${amount.className}`}>{amount.text}</span>
-                  <span className="tx-sub muted truncate">{sub}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+        <div className="tx-col">
+          {data && (
+            <div className="tx-filters">
+              <FilterChips
+                label="カテゴリ"
+                options={categoryChips}
+                selected={category}
+                onSelect={(id) => setFilter('category', id)}
+              />
+              <FilterChips
+                label="支払元"
+                options={accountChips}
+                selected={account}
+                onSelect={(id) => setFilter('account', id)}
+              />
+            </div>
+          )}
+          {day !== null && (
+            <div className="tx-day-filter">
+              <span>{formatDayLabel(day)}の取引</span>
+              <button
+                type="button"
+                className="link"
+                aria-label="日付の絞り込みを解除"
+                onClick={() => setFilter('date', null)}
+              >
+                解除
+              </button>
+            </div>
+          )}
+          <section className="card" aria-label="取引">
+            {transactions && rows.length === 0 && <p className="empty">{emptyMessage}</p>}
+            <ul className="list">
+              {rows.map((tx) => {
+                const amount = signedAmount(tx);
+                const title =
+                  tx.type === 'transfer'
+                    ? `${accountName(tx.accountId)} → ${accountName(tx.toAccountId)}`
+                    : tx.type === 'adjustment'
+                      ? TRANSACTION_TYPE_LABELS.adjustment
+                      : categoryName(tx.categoryId);
+                const sub = [
+                  TRANSACTION_TYPE_LABELS[tx.type],
+                  tx.type === 'transfer' ? '' : accountName(tx.accountId),
+                  tx.memo ?? '',
+                ]
+                  .filter(Boolean)
+                  .join('・');
+                return (
+                  <li key={tx.id}>
+                    <button
+                      type="button"
+                      className="tx-row"
+                      onClick={() =>
+                        // 編集後に同じ絞り込みの一覧へ戻れるようにする
+                        navigate(`/transactions/${tx.id}`, {
+                          state: { returnTo: `/transactions${location.search}` },
+                        })
+                      }
+                    >
+                      <span className="tx-date">{tx.date.slice(5).replace('-', '/')}</span>
+                      <span className="truncate">{title}</span>
+                      <span className={`amount ${amount.className}`}>{amount.text}</span>
+                      <span className="tx-sub muted truncate">{sub}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        </div>
+      </div>
     </>
   );
 }
