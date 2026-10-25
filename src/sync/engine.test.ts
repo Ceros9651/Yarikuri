@@ -3,6 +3,7 @@ import { YarikuriDB } from '../db/db';
 import * as repo from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import type { TransactionDraft } from '../domain/validation';
+import { expectDeltasMatchTransactions } from '../test/db';
 import { FakeCloud } from '../test/fakeCloud';
 import {
   clearSyncState,
@@ -161,12 +162,18 @@ describe('受信', () => {
     await vi.waitFor(async () =>
       expect(await b.transactions.get(id)).toMatchObject({ amount: 1200 }),
     );
+    // 受け取った取引も残高の増減の表に入る
+    await expectDeltasMatchTransactions(b);
+    expect(await b.balanceDeltas.count()).toBe(1);
     await addExpense(a, '1500', id);
     await vi.waitFor(async () =>
       expect(await b.transactions.get(id)).toMatchObject({ amount: 1500 }),
     );
+    await expectDeltasMatchTransactions(b);
     await repo.deleteTransaction(id, a);
     await vi.waitFor(async () => expect(await b.transactions.get(id)).toBeUndefined());
+    await expectDeltasMatchTransactions(b);
+    expect(await b.balanceDeltas.count()).toBe(0);
     // 受け取った変更は送り返さない
     expect(await b.outbox.count()).toBe(0);
   });
@@ -339,6 +346,23 @@ describe('初めてサインインした端末', () => {
     await linkDevice(b, cloud.remote(UID), UID, { ...yes, confirmReplace });
     expect(confirmReplace).toHaveBeenCalledOnce();
     expect(await b.transactions.get(local)).toBeUndefined();
+    await expectDeltasMatchTransactions(b);
+  });
+
+  it('クラウドの取引で置き換えると、残高の増減の表もクラウドの取引から作り直される', async () => {
+    const cloud = new FakeCloud();
+    const { db: a } = await connectedDevice(cloud);
+    await addExpense(a, '1200');
+    await addExpense(a, '800');
+    await vi.waitFor(() => expect(cloud.stored(UID, 'transactions').size).toBe(2));
+    const b = newDevice();
+    await ensureSeeded(b);
+    await addExpense(b, '999');
+
+    await linkDevice(b, cloud.remote(UID), UID, yes);
+    expect(await b.transactions.count()).toBe(2);
+    await expectDeltasMatchTransactions(b);
+    expect((await b.balanceDeltas.toArray()).map((d) => d.delta)).toEqual([-2_000]);
   });
 
   it('置き換えの確認でキャンセルすると端末のデータは変わらない', async () => {

@@ -11,6 +11,7 @@ import { computeBalance } from '../domain/balance';
 import { todayString } from '../domain/date';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
 import { ensureSeeded } from '../db/seed';
+import { putTransactions } from '../test/db';
 import { makeTx } from '../test/factories';
 
 async function setup() {
@@ -437,9 +438,9 @@ describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
     await save('expense', '2026-10-04', '400', ids.cat('食費'), ids.card);
     await save('expense', '2026-10-05', '700', ids.cat('日用品'));
     // 入力画面からはカテゴリなしで保存できないので、古いデータを想定して直接入れる
-    await db.transactions.add(
+    await putTransactions([
       makeTx({ type: 'expense', date: '2026-10-06', amount: 111, accountId: ids.wallet }),
-    );
+    ]);
     await save('income', '2026-10-25', '250000', ids.cat('給与', 'income'));
     await saveTransaction(
       {

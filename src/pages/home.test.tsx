@@ -2,8 +2,11 @@ import { within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addAccount, saveTransaction, setAccountHidden, setBudget } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
+import type { Transaction } from '../domain/types';
 import type { TransactionDraft } from '../domain/validation';
+import { putTransactions } from '../test/db';
 import { makeTx } from '../test/factories';
+import { makeManyTransactions } from '../test/manyTransactions';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
 import { mockViewport } from '../test/viewport';
 
@@ -74,7 +77,8 @@ describe('月の収入・出費・差額', () => {
     await waitFor(() => expect(screen.getByTestId('expense')).toHaveTextContent('¥999'));
     await user.click(screen.getByRole('button', { name: '前月' }));
     expect(screen.getByRole('heading', { level: 2, name: '2026年9月' })).toBeInTheDocument();
-    expect(screen.getByTestId('expense')).toHaveTextContent('¥1,234');
+    // 前月の取引を読み終えると集計が切り替わる
+    await waitFor(() => expect(screen.getByTestId('expense')).toHaveTextContent('¥1,234'));
   });
 });
 
@@ -200,7 +204,9 @@ describe('口座別残高', () => {
       expect(within(section).getAllByRole('listitem')[0]).toHaveTextContent('¥6,000'),
     );
     await user.click(screen.getByRole('button', { name: '前月' }));
-    expect(within(section).getAllByRole('listitem')[0]).toHaveTextContent('財布¥1,000');
+    await waitFor(() =>
+      expect(within(section).getAllByRole('listitem')[0]).toHaveTextContent('財布¥1,000'),
+    );
   });
 
   it('非表示の口座は残高一覧に出さない', async () => {
@@ -254,7 +260,7 @@ describe('カテゴリ別内訳とカード別利用額', () => {
     const { wallet, cat, save } = await setup();
     await save({ amount: '30000', categoryId: cat('食費') });
     // 入力画面からはカテゴリなしで保存できないので、古いデータを想定して直接入れる
-    await db.transactions.add(makeTx({ type: 'expense', amount: 700, accountId: wallet }));
+    await putTransactions([makeTx({ type: 'expense', amount: 700, accountId: wallet })]);
 
     const { user } = await renderHome();
     const section = await screen.findByRole('region', { name: 'カテゴリ別の出費' });
@@ -282,5 +288,80 @@ describe('カテゴリ別内訳とカード別利用額', () => {
       .getAllByRole('listitem')
       .map((li) => li.textContent);
     expect(rows).toEqual(['Aカード¥12,000', 'Bカード¥3,000']);
+  });
+});
+
+describe('記録が多いときの読み込み', () => {
+  /** 取引の表から読んだ記録の日付を集める。DB を開き直して差し込み、外すときも開き直す */
+  async function recordTransactionReads() {
+    const dates: string[] = [];
+    db.use({
+      stack: 'dbcore',
+      name: 'RecordTransactionReads',
+      create: (down) => ({
+        ...down,
+        table: (name) => {
+          const table = down.table(name);
+          if (name !== 'transactions') return table;
+          return {
+            ...table,
+            query: async (req) => {
+              const res = await table.query(req);
+              if (req.values) dates.push(...(res.result as Transaction[]).map((t) => t.date));
+              return res;
+            },
+            getMany: async (req) => {
+              const res = await table.getMany(req);
+              dates.push(
+                ...(res as (Transaction | undefined)[]).flatMap((t) => (t ? [t.date] : [])),
+              );
+              return res;
+            },
+          };
+        },
+      }),
+    });
+    db.close();
+    await db.open();
+    return {
+      dates,
+      async stop() {
+        db.unuse({ stack: 'dbcore', name: 'RecordTransactionReads' });
+        db.close();
+        await db.open();
+      },
+    };
+  }
+
+  it('別の月の取引を書いても、取引の表からは表示中の月の取引だけを読む', async () => {
+    const { wallet, cat, save } = await setup();
+    const many = makeManyTransactions({
+      accounts: await db.accounts.toArray(),
+      categories: await db.categories.toArray(),
+      count: 2_000,
+      endMonth: '2026-09',
+      months: 36,
+    });
+    await putTransactions(many);
+    await save({ date: '2026-10-03', amount: '300', categoryId: cat('食費') });
+    const reads = await recordTransactionReads();
+    try {
+      await renderHome();
+      await waitFor(() => expect(screen.getByTestId('expense')).toHaveTextContent('¥300'));
+      const total = screen.getByTestId('balance-total').textContent;
+      reads.dates.length = 0;
+
+      // 2025年1月の出費は10月末の残高を変えるので、ホームは読み直す
+      await save({ date: '2025-01-10', amount: '1000', categoryId: cat('食費') });
+      await waitFor(() => expect(screen.getByTestId('balance-total').textContent).not.toBe(total));
+      expect(reads.dates.length).toBeGreaterThan(0);
+      expect(reads.dates.every((d) => d.startsWith('2026-10-'))).toBe(true);
+
+      // 表示中の月の取引を書くと、収支と残高が変わる
+      await save({ date: '2026-10-09', amount: '200', accountId: wallet, categoryId: cat('食費') });
+      await waitFor(() => expect(screen.getByTestId('expense')).toHaveTextContent('¥500'));
+    } finally {
+      await reads.stop();
+    }
   });
 });

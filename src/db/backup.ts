@@ -18,7 +18,7 @@ export async function exportData(db: YarikuriDB = defaultDb): Promise<BackupData
 export async function importData(data: BackupData, db: YarikuriDB = defaultDb): Promise<void> {
   await db.transaction(
     'rw',
-    [db.accounts, db.categories, db.transactions, db.budgets, db.outbox],
+    [db.accounts, db.categories, db.transactions, db.budgets, db.balanceDeltas, db.outbox],
     async () => {
       const before = await Promise.all(SYNC_TABLES.map((table) => allDocIds(db, table)));
       await Promise.all([

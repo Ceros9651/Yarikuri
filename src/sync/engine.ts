@@ -191,24 +191,29 @@ export class SyncEngine {
     if (this.stopped) return;
     const db = this.db;
     let invalid = 0;
-    await db.transaction('rw', [db.table(table), db.outbox, db.meta], async () => {
-      let cursor = await readCursor(db, table);
-      const start = cursor;
-      for (const doc of docs) {
-        if (isAfter(doc.syncedAt, cursor)) cursor = doc.syncedAt;
-        // 端末の未送信の変更を優先する。あとで送られてクラウドでも後勝ちになる
-        if (await db.outbox.get([table, doc.docId])) continue;
-        if (doc.deleted) {
-          await deleteRecord(db, table, doc.docId);
-          continue;
+    // 取引を書くときは増減の表も同じトランザクションで更新される（他の表では使わないが常に含める）
+    await db.transaction(
+      'rw',
+      [db.table(table), db.balanceDeltas, db.outbox, db.meta],
+      async () => {
+        let cursor = await readCursor(db, table);
+        const start = cursor;
+        for (const doc of docs) {
+          if (isAfter(doc.syncedAt, cursor)) cursor = doc.syncedAt;
+          // 端末の未送信の変更を優先する。あとで送られてクラウドでも後勝ちになる
+          if (await db.outbox.get([table, doc.docId])) continue;
+          if (doc.deleted) {
+            await deleteRecord(db, table, doc.docId);
+            continue;
+          }
+          const record = parseRemoteRecord(table, doc.docId, doc.data);
+          if (record) await putRecord(db, table, record);
+          else invalid++;
         }
-        const record = parseRemoteRecord(table, doc.docId, doc.data);
-        if (record) await putRecord(db, table, record);
-        else invalid++;
-      }
-      if (cursor !== start) await writeCursor(db, table, cursor);
-      if (fromServer) await touchLastSyncedAt(db);
-    });
+        if (cursor !== start) await writeCursor(db, table, cursor);
+        if (fromServer) await touchLastSyncedAt(db);
+      },
+    );
     this.state.invalidRecords += invalid;
     if (fromServer) {
       this.waitingFirst.delete(table);
@@ -313,27 +318,31 @@ async function replaceWithCloud(
     return 'cancelled';
   }
   const fetched = await Promise.all(SYNC_TABLES.map((table) => remote.fetchAll(table)));
-  await db.transaction('rw', [...syncTables(db), db.outbox, db.meta], async () => {
-    for (const [i, table] of SYNC_TABLES.entries()) {
-      let cursor: Cursor | null = null;
-      const records: SyncRecord[] = [];
-      for (const doc of fetched[i]) {
-        if (isAfter(doc.syncedAt, cursor)) cursor = doc.syncedAt;
-        if (doc.deleted) continue;
-        const record = parseRemoteRecord(table, doc.docId, doc.data);
-        if (record) records.push(record);
+  await db.transaction(
+    'rw',
+    [...syncTables(db), db.balanceDeltas, db.outbox, db.meta],
+    async () => {
+      for (const [i, table] of SYNC_TABLES.entries()) {
+        let cursor: Cursor | null = null;
+        const records: SyncRecord[] = [];
+        for (const doc of fetched[i]) {
+          if (isAfter(doc.syncedAt, cursor)) cursor = doc.syncedAt;
+          if (doc.deleted) continue;
+          const record = parseRemoteRecord(table, doc.docId, doc.data);
+          if (record) records.push(record);
+        }
+        await db.table(table).clear();
+        await db.table(table).bulkPut(records);
+        await writeCursor(db, table, cursor);
       }
-      await db.table(table).clear();
-      await db.table(table).bulkPut(records);
-      await writeCursor(db, table, cursor);
-    }
-    await db.outbox.clear();
-    // 既定の「財布」と初期カテゴリを入れ直さない
-    if (!(await db.meta.get('seeded'))) {
-      await db.meta.put({ key: 'seeded', value: new Date().toISOString() });
-    }
-    await db.meta.put({ key: 'syncUid', value: uid });
-    await touchLastSyncedAt(db);
-  });
+      await db.outbox.clear();
+      // 既定の「財布」と初期カテゴリを入れ直さない
+      if (!(await db.meta.get('seeded'))) {
+        await db.meta.put({ key: 'seeded', value: new Date().toISOString() });
+      }
+      await db.meta.put({ key: 'syncUid', value: uid });
+      await touchLastSyncedAt(db);
+    },
+  );
   return 'linked';
 }

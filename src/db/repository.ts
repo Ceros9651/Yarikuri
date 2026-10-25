@@ -9,8 +9,10 @@ import {
   type TransactionDraft,
   type TransactionErrors,
 } from '../domain/validation';
+import { monthOf } from '../domain/date';
 import { budgetDocId, markDirty } from '../sync/docs';
 import { db as defaultDb, type YarikuriDB } from './db';
+import { readAccountDeltas, readMonthTransactions } from './queries';
 
 export class ValidationError extends Error {
   readonly fields: TransactionErrors;
@@ -202,48 +204,53 @@ export async function saveTransaction(
   id?: string,
   db: YarikuriDB = defaultDb,
 ): Promise<string> {
-  return db.transaction('rw', db.accounts, db.transactions, db.outbox, async () => {
-    const accounts = await db.accounts.toArray();
-    const errors = validateTransaction(draft, accounts);
-    if (Object.keys(errors).length > 0) {
-      throw new ValidationError('入力内容を確認してください', errors);
-    }
+  return db.transaction(
+    'rw',
+    [db.accounts, db.transactions, db.balanceDeltas, db.outbox],
+    async () => {
+      const accounts = await db.accounts.toArray();
+      const errors = validateTransaction(draft, accounts);
+      if (Object.keys(errors).length > 0) {
+        throw new ValidationError('入力内容を確認してください', errors);
+      }
 
-    let amount: number;
-    if (draft.type === 'adjustment') {
-      const account = accounts.find((a) => a.id === draft.accountId)!;
-      const transactions = await db.transactions.where('date').belowOrEqual(draft.date).toArray();
-      amount = computeAdjustmentAmount(
-        account,
-        transactions,
-        draft.date,
-        parseBalance(draft.amount)!,
-        id,
-      );
-    } else {
-      amount = parseAmount(draft.amount)!;
-    }
+      const existing = id ? await db.transactions.get(id) : undefined;
+      if (id && !existing) throw new Error('取引が見つかりません');
 
-    const now = new Date().toISOString();
-    const existing = id ? await db.transactions.get(id) : undefined;
-    if (id && !existing) throw new Error('取引が見つかりません');
-    const tx: Transaction = {
-      id: id ?? crypto.randomUUID(),
-      type: draft.type,
-      date: draft.date,
-      amount,
-      accountId: draft.accountId,
-      toAccountId: draft.type === 'transfer' ? draft.toAccountId : undefined,
-      categoryId:
-        draft.type === 'income' || draft.type === 'expense' ? draft.categoryId : undefined,
-      memo: memo.trim() || undefined,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
-    await db.transactions.put(tx);
-    await markDirty(db, 'transactions', [tx.id]);
-    return tx.id;
-  });
+      let amount: number;
+      if (draft.type === 'adjustment') {
+        const account = accounts.find((a) => a.id === draft.accountId)!;
+        amount = computeAdjustmentAmount(
+          account,
+          await readAccountDeltas(db, account.id),
+          await readMonthTransactions(db, monthOf(draft.date)),
+          draft.date,
+          parseBalance(draft.amount)!,
+          existing,
+        );
+      } else {
+        amount = parseAmount(draft.amount)!;
+      }
+
+      const now = new Date().toISOString();
+      const tx: Transaction = {
+        id: id ?? crypto.randomUUID(),
+        type: draft.type,
+        date: draft.date,
+        amount,
+        accountId: draft.accountId,
+        toAccountId: draft.type === 'transfer' ? draft.toAccountId : undefined,
+        categoryId:
+          draft.type === 'income' || draft.type === 'expense' ? draft.categoryId : undefined,
+        memo: memo.trim() || undefined,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      await db.transactions.put(tx);
+      await markDirty(db, 'transactions', [tx.id]);
+      return tx.id;
+    },
+  );
 }
 
 /** 保存した取引について、予算の注意・超過のメッセージを返す。該当しなければ null */
@@ -257,9 +264,10 @@ export async function getBudgetAlert(
     async () => {
       const tx = await db.transactions.get(id);
       if (!tx) return null;
+      // 予算は取引の日付の月で判定するので、その月の取引だけを読む
       return budgetAlertFor(
         tx,
-        await db.transactions.toArray(),
+        await readMonthTransactions(db, monthOf(tx.date)),
         await db.accounts.toArray(),
         await db.categories.toArray(),
         await db.budgets.toArray(),
@@ -269,7 +277,7 @@ export async function getBudgetAlert(
 }
 
 export async function deleteTransaction(id: string, db: YarikuriDB = defaultDb): Promise<void> {
-  await db.transaction('rw', db.transactions, db.outbox, async () => {
+  await db.transaction('rw', db.transactions, db.balanceDeltas, db.outbox, async () => {
     await db.transactions.delete(id);
     await markDirty(db, 'transactions', [id]);
   });
