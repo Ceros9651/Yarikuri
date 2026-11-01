@@ -2,7 +2,14 @@ import { fireEvent, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { exportData, importData } from '../db/backup';
 import { YarikuriDB } from '../db/db';
-import { addAccount, clearBudget, saveTransaction, setBudget } from '../db/repository';
+import {
+  addAccount,
+  clearBudget,
+  readMonthStartDay,
+  saveTransaction,
+  setBudget,
+  setMonthStartDay,
+} from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import { createBackup, parseBackup } from '../domain/backup';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
@@ -68,6 +75,7 @@ async function populate(target: YarikuriDB = db) {
   );
   await setBudget(food, '2026-10', '40000', target);
   await clearBudget(food, '2026-12', target);
+  await setMonthStartDay(6, target);
 }
 
 function backupFile(content: string, name = 'yarikuri-backup.json') {
@@ -97,6 +105,7 @@ describe('エクスポートとインポートの往復', () => {
       await expectDeltasMatchTransactions(other);
       expect(await other.balanceDeltas.count()).toBeGreaterThan(0);
       expect(exported.budgets).toHaveLength(2);
+      expect(await readMonthStartDay(other)).toBe(6);
     } finally {
       await other.delete();
     }
@@ -126,8 +135,10 @@ describe('インポートと同期', () => {
       data.accounts.length +
         data.categories.length +
         exported.transactions.length +
-        data.budgets.length,
+        data.budgets.length +
+        1,
     );
+    expect(await db.outbox.get(['settings', 'app'])).toBeDefined();
   });
 });
 
@@ -195,6 +206,21 @@ describe('バックアップ画面', () => {
     const after = await exportData();
     expect(after.transactions).toEqual(data.transactions);
     expect(after.budgets).toEqual([]);
+  });
+
+  it('月の開始日を含まない旧形式のファイルを読み込むと、月の開始日が 1日になる', async () => {
+    await populate();
+    const { settings: _omit, ...v2 } = { ...createBackup(await exportData()), version: 2 };
+    void _omit;
+    expect(await readMonthStartDay()).toBe(6);
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await renderApp('/settings');
+    await chooseFile(backupFile(JSON.stringify(v2)));
+
+    expect(await backupStatus()).toHaveTextContent('バックアップから復元しました');
+    expect(await readMonthStartDay()).toBe(1);
+    expect((await exportData()).budgets).toHaveLength(2);
   });
 
   it('存在しないカテゴリの予算を含むファイルはエラーを表示し、データは変わらない', async () => {

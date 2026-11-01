@@ -1,6 +1,13 @@
 import { computeAdjustmentAmount } from '../domain/balance';
 import { budgetAlertFor, type BudgetAlert } from '../domain/budget';
-import type { Account, AccountType, Category, CategoryKind, Transaction } from '../domain/types';
+import {
+  APP_SETTINGS_ID,
+  type Account,
+  type AccountType,
+  type Category,
+  type CategoryKind,
+  type Transaction,
+} from '../domain/types';
 import {
   parseAmount,
   parseBalance,
@@ -9,10 +16,15 @@ import {
   type TransactionDraft,
   type TransactionErrors,
 } from '../domain/validation';
-import { monthOf } from '../domain/date';
+import { MAX_MONTH_START_DAY, monthOf, periodOf, periodRange } from '../domain/date';
 import { budgetDocId, markDirty } from '../sync/docs';
 import { db as defaultDb, type YarikuriDB } from './db';
-import { readAccountDeltas, readMonthTransactions } from './queries';
+import {
+  readAccountDeltas,
+  readMonthStartDay as readMonthStartDayOf,
+  readMonthTransactions,
+  readPeriodTransactions,
+} from './queries';
 
 export class ValidationError extends Error {
   readonly fields: TransactionErrors;
@@ -192,6 +204,24 @@ export async function clearBudget(
   });
 }
 
+// ---- 設定 ----
+
+/** 月の開始日。設定していなければ 1日 */
+export function readMonthStartDay(db: YarikuriDB = defaultDb): Promise<number> {
+  return readMonthStartDayOf(db);
+}
+
+/** 月の開始日を設定する。1〜28 の整数 */
+export async function setMonthStartDay(day: number, db: YarikuriDB = defaultDb): Promise<void> {
+  if (!Number.isInteger(day) || day < 1 || day > MAX_MONTH_START_DAY) {
+    throw new ValidationError(`月の開始日は1〜${MAX_MONTH_START_DAY}日から選んでください`);
+  }
+  await db.transaction('rw', db.settings, db.outbox, async () => {
+    await db.settings.put({ id: APP_SETTINGS_ID, monthStartDay: day });
+    await markDirty(db, 'settings', [APP_SETTINGS_ID]);
+  });
+}
+
 // ---- 取引 ----
 
 /**
@@ -260,14 +290,16 @@ export async function getBudgetAlert(
 ): Promise<BudgetAlert | null> {
   return db.transaction(
     'r',
-    [db.accounts, db.categories, db.transactions, db.budgets],
+    [db.accounts, db.categories, db.transactions, db.budgets, db.settings],
     async () => {
       const tx = await db.transactions.get(id);
       if (!tx) return null;
-      // 予算は取引の日付の月で判定するので、その月の取引だけを読む
+      // 予算は取引の日付が属する月で判定するので、その月の範囲の取引だけを読む
+      const startDay = await readMonthStartDay(db);
       return budgetAlertFor(
         tx,
-        await readMonthTransactions(db, monthOf(tx.date)),
+        startDay,
+        await readPeriodTransactions(db, periodRange(periodOf(tx.date, startDay), startDay)),
         await db.accounts.toArray(),
         await db.categories.toArray(),
         await db.budgets.toArray(),

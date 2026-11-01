@@ -267,6 +267,15 @@ button:disabled {
 .month-switcher h2 {
   margin: 0;
   font-size: 1.1rem;
+  text-align: center;
+}
+
+/* 月の開始日が 1日以外のときの期間。月名より目立たせず、月名の下に置く */
+.month-period {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: var(--text-muted);
 }
 
 .month-switcher button {
@@ -836,6 +845,7 @@ button.drag-handle > svg {
   .month-switcher h2 {
     order: -1;
     margin-right: auto;
+    text-align: left;
   }
 
   /* カードの中（設定の予算）では、月名をカードの見出しより大きくしない */

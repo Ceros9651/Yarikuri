@@ -27,6 +27,7 @@ function sampleData(): BackupData {
       { categoryId: food.id, month: '2026-10', amount: 40_000 },
       { categoryId: food.id, month: '2026-12', amount: null },
     ],
+    settings: { monthStartDay: 6 },
   };
 }
 
@@ -36,11 +37,12 @@ describe('エクスポート', () => {
     const backup = createBackup(data, new Date('2026-10-09T03:00:00Z'));
     expect(backup).toMatchObject({
       format: 'yarikuri-backup',
-      version: 2,
+      version: 3,
       exportedAt: '2026-10-09T03:00:00.000Z',
     });
     expect(backup.transactions).toHaveLength(4);
     expect(backup.budgets).toHaveLength(2);
+    expect(backup.settings).toEqual({ monthStartDay: 6 });
   });
 
   it('ファイル名にエクスポート日付を含める', () => {
@@ -56,11 +58,30 @@ describe('エクスポート', () => {
 
 describe('予算を含まない旧形式（version 1）', () => {
   it('予算なしとして読み込める', () => {
-    const { budgets: _omit, ...v1 } = { ...createBackup(sampleData()), version: 1 };
+    const {
+      budgets: _omit,
+      settings: _omitSettings,
+      ...v1
+    } = {
+      ...createBackup(sampleData()),
+      version: 1,
+    };
     void _omit;
+    void _omitSettings;
     const result = parseBackup(JSON.stringify(v1));
     expect(result.ok && result.data.budgets).toEqual([]);
     expect(result.ok && result.data.transactions).toHaveLength(4);
+    expect(result.ok && result.data.settings).toEqual({ monthStartDay: 1 });
+  });
+});
+
+describe('月の開始日を含まない旧形式（version 2）', () => {
+  it('月の開始日を 1日として読み込める', () => {
+    const { settings: _omit, ...v2 } = { ...createBackup(sampleData()), version: 2 };
+    void _omit;
+    const result = parseBackup(JSON.stringify(v2));
+    expect(result.ok && result.data.settings).toEqual({ monthStartDay: 1 });
+    expect(result.ok && result.data.budgets).toHaveLength(2);
   });
 });
 
@@ -83,8 +104,8 @@ describe('不正なファイルの拒否', () => {
   });
 
   it('対応していないバージョン', () => {
-    expect(errorOf(JSON.stringify({ ...valid(), version: 3 }))).toBe(
-      '対応していないバージョンのファイルです（version: 3）',
+    expect(errorOf(JSON.stringify({ ...valid(), version: 4 }))).toBe(
+      '対応していないバージョンのファイルです（version: 4）',
     );
   });
 
@@ -115,10 +136,24 @@ describe('不正なファイルの拒否', () => {
     );
   });
 
-  it('version 2 で予算の項目がない', () => {
+  it('version 2 以降で予算の項目がない', () => {
     const { budgets: _omit, ...rest } = valid();
     void _omit;
+    expect(errorOf(JSON.stringify({ ...rest, version: 2 }))).toBe(
+      '必要な項目が不足しているか、形式が正しくありません',
+    );
+  });
+
+  it('version 3 で月の開始日の項目がない', () => {
+    const { settings: _omit, ...rest } = valid();
+    void _omit;
     expect(errorOf(JSON.stringify(rest))).toBe(
+      '必要な項目が不足しているか、形式が正しくありません',
+    );
+  });
+
+  it.each([0, 29, 1.5])('月の開始日が %s', (monthStartDay) => {
+    expect(errorOf(JSON.stringify({ ...valid(), settings: { monthStartDay } }))).toBe(
       '必要な項目が不足しているか、形式が正しくありません',
     );
   });

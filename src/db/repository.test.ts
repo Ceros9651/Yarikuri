@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { balancesAtMonthEnd, computeBalance } from '../domain/balance';
+import { balancesAsOf, computeBalance } from '../domain/balance';
 import { lastDayOfMonth } from '../domain/date';
 import type { TransactionDraft } from '../domain/validation';
 import { YarikuriDB } from './db';
@@ -39,6 +39,7 @@ describe('スキーマ', () => {
       'categories',
       'meta',
       'outbox',
+      'settings',
       'transactions',
     ]);
   });
@@ -282,6 +283,24 @@ describe('予算', () => {
   });
 });
 
+describe('月の開始日', () => {
+  it('設定していなければ 1日', async () => {
+    expect(await repo.readMonthStartDay(db)).toBe(1);
+  });
+
+  it('6 を保存すると読み込みが 6 になり outbox に積まれる', async () => {
+    await repo.setMonthStartDay(6, db);
+    expect(await repo.readMonthStartDay(db)).toBe(6);
+    expect(await db.outbox.get(['settings', 'app'])).toBeDefined();
+  });
+
+  it.each([0, 29, 1.5])('%s は保存しない', async (day) => {
+    await expect(repo.setMonthStartDay(day, db)).rejects.toThrow(repo.ValidationError);
+    expect(await db.settings.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(0);
+  });
+});
+
 describe('取引', () => {
   async function setup() {
     const wallet = await repo.addAccount({ name: '財布', type: 'cash', initialBalance: 5_300 }, db);
@@ -342,10 +361,16 @@ describe('取引', () => {
   /** 増減の表から求めた月末の残高と、全取引から求めた残高 */
   async function monthEndBalance(accountId: string, month: string) {
     const account = (await db.accounts.get(accountId))!;
-    const fromDeltas = balancesAtMonthEnd([account], await db.balanceDeltas.toArray(), month).get(
-      accountId,
-    );
-    const fromAll = computeBalance(account, await db.transactions.toArray(), lastDayOfMonth(month));
+    const transactions = await db.transactions.toArray();
+    const monthTransactions = transactions.filter((t) => t.date.startsWith(`${month}-`));
+    const end = lastDayOfMonth(month);
+    const fromDeltas = balancesAsOf(
+      [account],
+      await db.balanceDeltas.toArray(),
+      monthTransactions,
+      end,
+    ).get(accountId);
+    const fromAll = computeBalance(account, transactions, end);
     expect(fromDeltas).toBe(fromAll);
     return fromDeltas;
   }

@@ -349,3 +349,59 @@ describe('予算', () => {
     expect(screen.getByTestId('budget-source-Amazon')).toHaveTextContent('予算 ¥5,000');
   });
 });
+
+describe('月の開始日', () => {
+  const select = () => screen.getByRole('combobox', { name: '月の開始日' });
+
+  async function renderSettingsOn(today: Date) {
+    vi.useFakeTimers({ now: today, toFake: ['Date'] });
+    try {
+      return await renderApp('/settings');
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('既定では 1日で、今月は暦月になる', async () => {
+    await ensureSeeded();
+    vi.useFakeTimers({ now: new Date(2026, 10, 1), toFake: ['Date'] });
+    try {
+      await renderApp('/settings');
+      expect(select()).toHaveValue('1');
+      expect(screen.getByTestId('current-period')).toHaveTextContent('今月は 11月1日〜11月30日');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('6日を選ぶと保存され、今月の範囲とホームの月が変わる', async () => {
+    await ensureSeeded();
+    const { user } = await renderSettingsOn(new Date(2026, 10, 1));
+    vi.useFakeTimers({ now: new Date(2026, 10, 1), toFake: ['Date'] });
+    try {
+      await user.selectOptions(select(), '6');
+      await waitFor(() =>
+        expect(screen.getByTestId('current-period')).toHaveTextContent('今月は 10月6日〜11月5日'),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+    expect((await db.settings.get('app'))?.monthStartDay).toBe(6);
+
+    await user.click(screen.getAllByRole('link', { name: 'ホーム' })[0]);
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /^2026年10月\s*10月6日〜11月5日$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('選べるのは 1日〜28日だけ', async () => {
+    await ensureSeeded();
+    await renderApp('/settings');
+    const options = within(select())
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+    expect(options).toHaveLength(28);
+    expect(options[0]).toBe('1日');
+    expect(options.at(-1)).toBe('28日');
+  });
+});

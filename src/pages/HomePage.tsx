@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { CategoryExpenses } from '../components/CategoryExpenses';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
-import { balancesAtMonthEnd } from '../domain/balance';
+import { balancesAsOf } from '../domain/balance';
 import { BUDGET_STATUS_LABELS, summarizeBudgets } from '../domain/budget';
 import { formatYen } from '../domain/format';
 import { summarizeMonth } from '../domain/summary';
@@ -11,8 +11,8 @@ import { useMonthData } from '../hooks/useData';
 import { useIsDesktop } from '../hooks/useIsDesktop';
 
 export function HomePage() {
-  const { month: selectedMonth } = useMonth();
-  const data = useMonthData(selectedMonth);
+  const { month: selectedMonth, range: selectedRange } = useMonth();
+  const data = useMonthData(selectedMonth, selectedRange);
   const isDesktop = useIsDesktop();
   if (!data) {
     return (
@@ -23,13 +23,14 @@ export function HomePage() {
     );
   }
   // 月を切り替えた直後は、新しい月を読み終えるまで前の月の内容を出し続ける
-  const { month, accounts, categories, transactions, budgets, balanceDeltas } = data;
+  const { month, range, accounts, categories, transactions, budgets, balanceDeltas } = data;
 
-  const summary = summarizeMonth(month, transactions, accounts, categories);
-  const budgetUsages = summarizeBudgets(month, transactions, accounts, categories, budgets);
+  const summary = summarizeMonth(range, transactions, accounts, categories);
+  const budgetUsages = summarizeBudgets(month, range, transactions, accounts, categories, budgets);
   const overBudget = budgetUsages.filter((b) => b.status === 'over');
   const assetAccounts = accounts.filter((a) => isAssetAccount(a) && !a.hidden);
-  const balances = balancesAtMonthEnd(assetAccounts, balanceDeltas, month);
+  // 月の範囲の最終日時点の残高。範囲の取引は最終日の暦月の 1日〜最終日を含む
+  const balances = balancesAsOf(assetAccounts, balanceDeltas, transactions, range.end);
   const totalBalance = [...balances.values()].reduce((sum, b) => sum + b, 0);
 
   const budgetsSection = (

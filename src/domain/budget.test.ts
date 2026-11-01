@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { periodRange } from './date';
 import { budgetAlertFor, budgetStatus, resolveBudget, summarizeBudgets } from './budget';
 import type { Budget, Transaction } from './types';
 import { makeAccount, makeCategory, makeTx } from '../test/factories';
@@ -76,6 +77,7 @@ describe('予算の消化状況', () => {
   it('出費 0 円のカテゴリも予算があれば含める', () => {
     const usages = summarizeBudgets(
       '2026-10',
+      periodRange('2026-10', 1),
       [spend(food.id, 30_000)],
       accounts,
       categories,
@@ -106,6 +108,7 @@ describe('予算の消化状況', () => {
   it('超過したカテゴリは超過額を負の残りで返す', () => {
     const usages = summarizeBudgets(
       '2026-10',
+      periodRange('2026-10', 1),
       [spend(eatOut.id, 12_500)],
       accounts,
       categories,
@@ -122,6 +125,7 @@ describe('予算の消化状況', () => {
   it('非表示のカテゴリと予算のないカテゴリは含めない', () => {
     const usages = summarizeBudgets(
       '2026-10',
+      periodRange('2026-10', 1),
       [spend(amazon.id, 9_000)],
       accounts,
       categories,
@@ -130,8 +134,26 @@ describe('予算の消化状況', () => {
     expect(usages.map((u) => u.name)).toEqual(['食費', '外食']);
   });
 
+  it('開始日が 6日なら 6日から翌月 5日までの出費と比べる', () => {
+    const usages = summarizeBudgets(
+      '2026-10',
+      periodRange('2026-10', 6),
+      [
+        spend(food.id, 5_000, '2026-10-05'),
+        spend(food.id, 10_000, '2026-10-20'),
+        spend(food.id, 3_000, '2026-11-03'),
+      ],
+      accounts,
+      categories,
+      budgets,
+    );
+    expect(usages.find((u) => u.categoryId === food.id)?.spent).toBe(13_000);
+  });
+
   it('予算の設定前の月は空', () => {
-    expect(summarizeBudgets('2026-09', [], accounts, categories, budgets)).toEqual([]);
+    expect(
+      summarizeBudgets('2026-09', periodRange('2026-09', 1), [], accounts, categories, budgets),
+    ).toEqual([]);
   });
 });
 
@@ -141,7 +163,7 @@ describe('出費保存時のアラート', () => {
     { categoryId: eatOut.id, month: '2026-09', amount: 10_000 },
   ];
   const alertFor = (tx: Transaction, others: Transaction[]) =>
-    budgetAlertFor(tx, [...others, tx], accounts, categories, budgets);
+    budgetAlertFor(tx, 1, [...others, tx], accounts, categories, budgets);
 
   it('保存で予算を超えたら知らせる', () => {
     const alert = alertFor(spend(eatOut.id, 3_000), [spend(eatOut.id, 8_000)]);
@@ -168,6 +190,26 @@ describe('出費保存時のアラート', () => {
     expect(alertFor(spend(eatOut.id, 1_000), [september])).toBeNull();
   });
 
+  it('開始日より前の日付は前の月で判定する', () => {
+    const october = [
+      { categoryId: eatOut.id, month: '2026-10', amount: 10_000 },
+      { categoryId: eatOut.id, month: '2026-11', amount: 50_000 },
+    ];
+    const tx = spend(eatOut.id, 2_000, '2026-11-03');
+    const alert = budgetAlertFor(
+      tx,
+      6,
+      [spend(eatOut.id, 9_000, '2026-10-20'), tx],
+      accounts,
+      categories,
+      october,
+    );
+    expect(alert).toEqual({
+      status: 'over',
+      message: '外食が予算を超過しました（¥11,000 / ¥10,000）',
+    });
+  });
+
   it('収入・振替・残高調整では知らせない', () => {
     const over = [spend(food.id, 50_000)];
     const txs = [
@@ -181,6 +223,6 @@ describe('出費保存時のアラート', () => {
   it('予算のないカテゴリでは知らせない', () => {
     const other = makeCategory('日用品');
     const tx = spend(other.id, 99_999);
-    expect(budgetAlertFor(tx, [tx], accounts, [...categories, other], budgets)).toBeNull();
+    expect(budgetAlertFor(tx, 1, [tx], accounts, [...categories, other], budgets)).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { isInPeriod, type PeriodRange } from './date';
 import type { Account, Category, Transaction } from './types';
 
 /** カテゴリのない出費で取引一覧を絞り込むときの `category` の値 */
@@ -26,9 +27,9 @@ export interface MonthlySummary {
   cardTotal: number;
 }
 
-/** 'YYYY-MM' の月について集計する。振替と残高調整は含めない */
+/** 月の範囲 range について集計する。振替と残高調整は含めない */
 export function summarizeMonth(
-  month: string,
+  range: PeriodRange,
   transactions: readonly Transaction[],
   accounts: readonly Account[],
   categories: readonly Category[],
@@ -41,7 +42,7 @@ export function summarizeMonth(
   const cardTotals = new Map<string, number>();
 
   for (const tx of transactions) {
-    if (!tx.date.startsWith(`${month}-`)) continue;
+    if (!isInPeriod(tx.date, range)) continue;
     if (tx.type === 'income') {
       income += tx.amount;
     } else if (tx.type === 'expense') {

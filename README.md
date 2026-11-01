@@ -112,6 +112,8 @@ Firebase プロジェクトを新しく用意する手順:
 
    CLI を使わない場合は、コンソールの **Firestore Database → ルール** に firestore.rules の中身を貼って公開する。ルールを変えたときはやり直す（CI はルールを反映しない）
 
+   書き込めるコレクションは `accounts` / `categories` / `transactions` / `budgets` / `settings`（月の開始日）。`settings` は月の開始日の機能で加わったので、それより前にルールを反映したプロジェクトでは、この機能を含むアプリを公開する前にルールを反映し直す。古いルールのままだと月の開始日を送れず、同期がエラーで止まる
+
 6. GitHub の **Settings → Secrets and variables → Actions → Variables** に `VITE_FIREBASE_API_KEY` / `VITE_FIREBASE_AUTH_DOMAIN` / `VITE_FIREBASE_PROJECT_ID` / `VITE_FIREBASE_APP_ID` を登録する。Web 用の Firebase 設定はページから誰でも見える値なので、Secrets ではなく Variables に置く
 
 ### デプロイ

@@ -1,18 +1,29 @@
 import { z } from 'zod';
-import { todayString } from './date';
+import { DEFAULT_MONTH_START_DAY, MAX_MONTH_START_DAY, todayString } from './date';
 import { MAX_AMOUNT } from './validation';
-import type { Account, Budget, Category, Transaction } from './types';
+import {
+  APP_SETTINGS_ID,
+  type Account,
+  type Budget,
+  type Category,
+  type Transaction,
+} from './types';
 
 export const BACKUP_FORMAT = 'yarikuri-backup';
-export const BACKUP_VERSION = 2;
-/** インポートできるバージョン。version 1 は予算を含まない */
-const SUPPORTED_VERSIONS: readonly unknown[] = [1, BACKUP_VERSION];
+export const BACKUP_VERSION = 3;
+/** インポートできるバージョン。version 1 は予算を、version 1・2 は設定を含まない */
+const SUPPORTED_VERSIONS: readonly unknown[] = [1, 2, BACKUP_VERSION];
 
 export interface BackupData {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
   budgets: Budget[];
+  settings: BackupSettings;
+}
+
+export interface BackupSettings {
+  monthStartDay: number;
 }
 
 export interface Backup extends BackupData {
@@ -58,15 +69,22 @@ export const budgetSchema = z.object({
   amount: z.number().int().min(1).max(MAX_AMOUNT).nullable(),
 });
 
+export const settingsSchema = z.object({
+  id: z.literal(APP_SETTINGS_ID),
+  monthStartDay: z.number().int().min(1).max(MAX_MONTH_START_DAY),
+});
+
 const backupSchema = z.object({
   format: z.literal(BACKUP_FORMAT),
-  version: z.union([z.literal(1), z.literal(BACKUP_VERSION)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(BACKUP_VERSION)]),
   exportedAt: z.string(),
   accounts: z.array(accountSchema),
   categories: z.array(categorySchema),
   transactions: z.array(transactionSchema),
   // version 1 のファイルには無い
   budgets: z.array(budgetSchema).optional(),
+  // version 1・2 のファイルには無い
+  settings: settingsSchema.omit({ id: true }).optional(),
 });
 
 export function createBackup(data: BackupData, now: Date = new Date()): Backup {
@@ -78,6 +96,7 @@ export function createBackup(data: BackupData, now: Date = new Date()): Backup {
     categories: data.categories,
     transactions: data.transactions,
     budgets: data.budgets,
+    settings: data.settings,
   };
 }
 
@@ -114,9 +133,13 @@ export function parseBackup(text: string): ParseResult {
   }
   const { accounts, categories, transactions } = parsed.data;
   const budgets = parsed.data.version === 1 ? [] : (parsed.data.budgets ?? []);
-  if (parsed.data.version === BACKUP_VERSION && !parsed.data.budgets) {
+  if (parsed.data.version !== 1 && !parsed.data.budgets) {
     return { ok: false, error: '必要な項目が不足しているか、形式が正しくありません' };
   }
+  if (parsed.data.version === BACKUP_VERSION && !parsed.data.settings) {
+    return { ok: false, error: '必要な項目が不足しているか、形式が正しくありません' };
+  }
+  const settings = parsed.data.settings ?? { monthStartDay: DEFAULT_MONTH_START_DAY };
 
   const accountIds = new Set(accounts.map((a) => a.id));
   const categoryIds = new Set(categories.map((c) => c.id));
@@ -141,5 +164,5 @@ export function parseBackup(text: string): ParseResult {
     return { ok: false, error: '同じカテゴリと月の予算が重複しています' };
   }
 
-  return { ok: true, data: { accounts, categories, transactions, budgets } };
+  return { ok: true, data: { accounts, categories, transactions, budgets, settings } };
 }

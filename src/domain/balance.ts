@@ -86,21 +86,20 @@ export function buildBalanceDeltas(transactions: readonly Transaction[]): Balanc
 }
 
 /**
- * 月末時点の現金・銀行・電子マネー口座の残高を id ごとに返す。
- * computeBalances(accounts, 全取引, lastDayOfMonth(month)) と同じ値になる
+ * date（その日を含む）時点の現金・銀行・電子マネー口座の残高を id ごとに返す。
+ * transactions には date の暦月の 1日〜date の取引を含めて渡す（月の取引でよい）。
+ * computeBalances(accounts, 全取引, date) と同じ値になる
  */
-export function balancesAtMonthEnd(
+export function balancesAsOf(
   accounts: readonly Account[],
   deltas: readonly BalanceDelta[],
-  month: string,
+  transactions: readonly Transaction[],
+  date: string,
 ): Map<string, number> {
   const result = new Map<string, number>();
   for (const account of accounts) {
-    if (isAssetAccount(account)) result.set(account.id, account.initialBalance);
-  }
-  for (const d of deltas) {
-    const balance = result.get(d.accountId);
-    if (balance !== undefined && d.month <= month) result.set(d.accountId, balance + d.delta);
+    const balance = balanceAsOf(account, deltas, transactions, date);
+    if (balance !== null) result.set(account.id, balance);
   }
   return result;
 }

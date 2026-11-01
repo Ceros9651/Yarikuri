@@ -199,6 +199,16 @@ describe('受信', () => {
     });
   });
 
+  it('月の開始日も同期される', async () => {
+    const cloud = new FakeCloud();
+    const { db: a } = await connectedDevice(cloud);
+    const { db: b } = await connectedDevice(cloud);
+
+    await repo.setMonthStartDay(6, a);
+
+    await vi.waitFor(async () => expect(await repo.readMonthStartDay(b)).toBe(6));
+  });
+
   it('別々の端末でほぼ同時に記録した取引は両方残る', async () => {
     const cloud = new FakeCloud();
     const { db: a } = await connectedDevice(cloud);
@@ -303,6 +313,18 @@ describe('初めてサインインした端末', () => {
     expect(await b.transactions.get(id)).toEqual(await a.transactions.get(id));
     expect(await b.outbox.count()).toBe(0);
     expect(await getSyncUid(b)).toBe(UID);
+  });
+
+  it('新しい端末に月の開始日が引き継がれる', async () => {
+    const cloud = new FakeCloud();
+    const { db: a } = await connectedDevice(cloud);
+    await repo.setMonthStartDay(6, a);
+    await vi.waitFor(async () => expect(await a.outbox.count()).toBe(0));
+
+    const b = newDevice();
+    await ensureSeeded(b);
+    expect(await linkDevice(b, cloud.remote(UID), UID, yes)).toBe('linked');
+    expect(await repo.readMonthStartDay(b)).toBe(6);
   });
 
   it('最初の端末で、送る前にキャンセルすると何も変わらない', async () => {
