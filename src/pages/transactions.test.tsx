@@ -6,6 +6,7 @@ import {
   setAccountHidden,
   setBudget,
   setCategoryHidden,
+  setMonthStartDay,
 } from '../db/repository';
 import { computeBalance } from '../domain/balance';
 import { todayString } from '../domain/date';
@@ -421,6 +422,42 @@ describe('取引一覧', () => {
   });
 });
 
+describe('月の開始日による取引一覧の範囲', () => {
+  it('開始日が 6日なら、6日から翌月 5日までの取引を新しい順に表示する', async () => {
+    const { wallet, cat } = await setup();
+    await setMonthStartDay(6);
+    const expense = (date: string, amount: string) =>
+      saveTransaction(
+        {
+          type: 'expense',
+          date,
+          amount,
+          accountId: wallet,
+          toAccountId: '',
+          categoryId: cat('食費'),
+        },
+        '',
+      );
+    await expense('2026-10-05', '100');
+    await expense('2026-10-06', '200');
+    await expense('2026-11-05', '300');
+    await expense('2026-11-06', '400');
+
+    vi.useFakeTimers({ now: new Date(2026, 9, 10), toFake: ['Date'] });
+    await renderApp('/transactions');
+    vi.useRealTimers();
+
+    const list = await screen.findByRole('region', { name: '取引' });
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
+    const items = within(list)
+      .getAllByRole('listitem')
+      .map((li) => li.textContent);
+    expect(items[0]).toContain('11/05');
+    expect(items[1]).toContain('10/06');
+    expect(screen.getByTestId('tx-expense-total')).toHaveTextContent('¥500');
+  });
+});
+
 describe('取引一覧のカテゴリ・支払元での絞り込み', () => {
   async function setupFilters() {
     const ids = await setup();
@@ -767,6 +804,35 @@ describe('出費保存時の予算アラート', () => {
     );
   });
 
+  it('開始日より前の日付の出費は、前の月の予算で判定する', async () => {
+    const ids = await setup();
+    await setMonthStartDay(6);
+    await setBudget(ids.cat('外食'), '2026-10', '10000');
+    await setBudget(ids.cat('外食'), '2026-11', '50000');
+    await saveTransaction(
+      {
+        type: 'expense',
+        date: '2026-10-20',
+        amount: '9000',
+        accountId: ids.wallet,
+        toAccountId: '',
+        categoryId: ids.cat('外食'),
+      },
+      '',
+    );
+
+    vi.useFakeTimers({ now: new Date(2026, 10, 3), toFake: ['Date'] });
+    const { user } = await renderApp('/new');
+    vi.useRealTimers();
+    expect(screen.getByLabelText('日付')).toHaveValue('2026-11-03');
+    await user.type(screen.getByLabelText('金額'), '2000');
+    await user.click(await screen.findByRole('button', { name: '外食' }));
+    await user.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByTestId('budget-alert')).toHaveTextContent(
+      '外食が予算を超過しました（¥11,000 / ¥10,000）',
+    );
+  });
+
   it('予算の80%に達したら、注意のメッセージを表示する', async () => {
     await setupBudget('10000', '7000');
     await saveEatOut('1000');
@@ -888,6 +954,62 @@ describe('取引一覧のカレンダー', () => {
     await waitFor(() => expect(rowDates()).toHaveLength(5));
     expect(dayCell('10月6日')).toHaveAccessibleName('10月6日');
     expect(dayCell('10月6日')).toHaveTextContent(/^6$/);
+  });
+
+  it('開始日が 6日なら、6日から翌月 5日までを並べ、月をまたぐ日に月を添える', async () => {
+    await setupDays();
+    await setMonthStartDay(6);
+    await renderList('/transactions');
+    await waitFor(() => expect(dayCell('10月6日')).toBeInTheDocument());
+    const cells = Array.from(calendar().querySelector('.tx-calendar-grid')!.children).slice(7);
+    // 2026-10-06 は火曜なので、日曜・月曜の枠は空ける
+    expect(cells[0]).toHaveClass('tx-calendar-blank');
+    expect(cells[1]).toHaveClass('tx-calendar-blank');
+    expect(cells[2]).toHaveTextContent(/^10\/6/);
+    const buttons = within(calendar()).getAllByRole('button');
+    expect(buttons).toHaveLength(31);
+    expect(buttons[0]).toHaveAccessibleName(/^10月6日/);
+    expect(buttons.at(-1)).toHaveAccessibleName(/^11月5日/);
+    expect(dayCell('11月1日')).toHaveTextContent(/^11\/1/);
+    expect(dayCell('10月7日')).toHaveTextContent(/^7/);
+    expect(within(calendar()).queryByRole('button', { name: /^10月5日/ })).toBeNull();
+    expect(within(calendar()).queryByRole('button', { name: /^11月6日/ })).toBeNull();
+    // 11月5日の木曜の後の金曜・土曜は空ける
+    expect(cells.at(-1)).toHaveClass('tx-calendar-blank');
+    expect(cells.at(-2)).toHaveClass('tx-calendar-blank');
+  });
+
+  it('開始日を変えるとカレンダーの範囲が変わる', async () => {
+    await setupDays();
+    await renderList('/transactions');
+    await waitFor(() => expect(dayCell('10月1日')).toBeInTheDocument());
+
+    await setMonthStartDay(6);
+    await waitFor(() =>
+      expect(within(calendar()).getAllByRole('button')[0]).toHaveAccessibleName(/^10月6日/),
+    );
+    expect(dayCell('11月5日')).toBeInTheDocument();
+  });
+
+  it('開始日が 6日なら、翌月の日の枠でも絞り込める', async () => {
+    const ids = await setup();
+    await setMonthStartDay(6);
+    await saveTransaction(
+      {
+        type: 'expense',
+        date: '2026-11-03',
+        amount: '700',
+        accountId: ids.wallet,
+        toAccountId: '',
+        categoryId: ids.cat('食費'),
+      },
+      '',
+    );
+    const { user } = await renderList('/transactions');
+    await waitFor(() => expect(dayCell('11月3日')).toBeInTheDocument());
+    await user.click(dayCell('11月3日'));
+    await waitFor(() => expect(rowDates()).toEqual(['11/03']));
+    expect(screen.getByRole('heading', { level: 2, name: '11月3日の取引' })).toBeInTheDocument();
   });
 
   it('月の日だけを枠に並べ、前後の月の日は出さない', async () => {

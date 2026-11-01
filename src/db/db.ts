@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable, type Table, type Transaction as DexieTransaction } from 'dexie';
 import { buildBalanceDeltas, type BalanceDelta } from '../domain/balance';
-import type { Account, Budget, Category, Transaction } from '../domain/types';
+import type { Account, AppSettings, Budget, Category, Transaction } from '../domain/types';
 import type { OutboxEntry, SyncTable } from '../sync/docs';
 import { balanceDeltasMiddleware } from './balanceDeltas';
 
@@ -24,6 +24,7 @@ export class YarikuriDB extends Dexie {
   categories!: EntityTable<Category, 'id'>;
   transactions!: EntityTable<Transaction, 'id'>;
   meta!: EntityTable<MetaEntry, 'key'>;
+  settings!: EntityTable<AppSettings, 'id'>;
   budgets!: Table<Budget, [string, string]>;
   outbox!: Table<OutboxEntry, [string, string]>;
   /** 口座×月の残高の増減。取引から作る端末の中だけの派生データで、同期・バックアップしない */
@@ -45,9 +46,12 @@ export class YarikuriDB extends Dexie {
     const v3 = { ...v2, outbox: '[table+docId]' };
     this.version(3).stores(v3);
     // 残高を全取引から足し直さずに求めるための、口座×月の増減。既存の取引から一度だけ作る
+    const v4 = { ...v3, balanceDeltas: '[accountId+month]' };
     this.version(4)
-      .stores({ ...v3, balanceDeltas: '[accountId+month]' })
+      .stores(v4)
       .upgrade((tx) => fillBalanceDeltas(tx));
+    // 月の開始日などの設定。記録がなければ既定値を使うので、移行はしない
+    this.version(5).stores({ ...v4, settings: 'id' });
     this.use(balanceDeltasMiddleware);
   }
 }

@@ -52,6 +52,16 @@ export interface Budget {
   amount: number | null;
 }
 
+/** アプリの設定。端末間で同期する記録は id が 'app' の 1 件だけ */
+export interface AppSettings {
+  /** 常に APP_SETTINGS_ID */
+  id: string;
+  /** 月の開始日（1〜28）。この日から翌月のこの日の前日までを 1 か月とする */
+  monthStartDay: number;
+}
+
+export const APP_SETTINGS_ID = 'app';
+
 export const ACCOUNT_TYPES: readonly AccountType[] = ['cash', 'bank', 'emoney', 'credit'];
 
 export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {

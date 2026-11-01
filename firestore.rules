@@ -13,7 +13,7 @@ service cloud.firestore {
       match /{collection}/{docId} {
         allow read: if request.auth != null && request.auth.uid == uid;
         allow create, update: if request.auth != null && request.auth.uid == uid
-                              && collection in ['accounts', 'categories', 'transactions', 'budgets']
+                              && collection in ['accounts', 'categories', 'transactions', 'budgets', 'settings']
                               && request.resource.data.keys().hasOnly(['data', 'deleted', 'syncedAt'])
                               && request.resource.data.deleted is bool
                               && request.resource.data.syncedAt == request.time;

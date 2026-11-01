@@ -1,4 +1,4 @@
-import { lastDayOfMonth } from './date';
+import { monthOf, todayString, type PeriodRange } from './date';
 import type { Transaction } from './types';
 
 export interface DailyTotal {
@@ -18,16 +18,33 @@ export function dailyTotals(transactions: readonly Transaction[]): Map<string, D
   return totals;
 }
 
-/** 'YYYY-MM' の月を日曜始まりの週の行に並べる。月の外の枠は null */
-export function calendarWeeks(month: string): (string | null)[][] {
-  const [y, m] = month.split('-').map(Number);
-  const firstWeekday = new Date(y, m - 1, 1).getDay();
-  const lastDay = Number(lastDayOfMonth(month).slice(8));
-  const cells: (string | null)[] = Array<null>(firstWeekday).fill(null);
-  for (let d = 1; d <= lastDay; d++) cells.push(`${month}-${String(d).padStart(2, '0')}`);
+/** 月の範囲の日を日曜始まりの週の行に並べる。範囲の外の枠は null */
+export function calendarWeeks(range: PeriodRange): (string | null)[][] {
+  const [y, m, d] = range.start.split('-').map(Number);
+  const cells: (string | null)[] = Array<null>(new Date(y, m - 1, d).getDay()).fill(null);
+  for (
+    let day = new Date(y, m - 1, d);
+    todayString(day) <= range.end;
+    day.setDate(day.getDate() + 1)
+  ) {
+    cells.push(todayString(day));
+  }
   while (cells.length % 7 !== 0) cells.push(null);
 
   const weeks: (string | null)[][] = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
   return weeks;
+}
+
+/**
+ * カレンダーの日の枠に出す日付。範囲が 2 つの暦月にまたがるときは、範囲の最初の日と
+ * 後の月の 1日だけ「10/6」「11/1」のように月も添え、それ以外は日だけにする
+ */
+export function calendarDayLabel(date: string, range: PeriodRange): string {
+  const day = Number(date.slice(8));
+  const crossesMonths = monthOf(range.start) !== monthOf(range.end);
+  if (crossesMonths && (date === range.start || day === 1)) {
+    return `${Number(date.slice(5, 7))}/${day}`;
+  }
+  return String(day);
 }

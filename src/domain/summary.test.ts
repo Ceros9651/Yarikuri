@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { periodRange } from './date';
 import { summarizeMonth } from './summary';
 import { makeAccount, makeCategory, makeTx } from '../test/factories';
 
@@ -21,7 +22,7 @@ describe('月の収入・出費・差額', () => {
       makeTx({ type: 'transfer', amount: 30_000, accountId: bank.id, toAccountId: wallet.id }),
       makeTx({ type: 'adjustment', amount: -500, accountId: wallet.id }),
     ];
-    const s = summarizeMonth('2026-10', txs, accounts, categories);
+    const s = summarizeMonth(periodRange('2026-10', 1), txs, accounts, categories);
     expect(s.income).toBe(250_000);
     expect(s.expense).toBe(80_000);
     expect(s.net).toBe(170_000);
@@ -58,8 +59,22 @@ describe('月の収入・出費・差額', () => {
         date: '2026-11-01',
       }),
     ];
-    expect(summarizeMonth('2026-10', txs, accounts, categories).expense).toBe(600);
-    expect(summarizeMonth('2026-09', txs, accounts, categories).expense).toBe(100);
+    expect(summarizeMonth(periodRange('2026-10', 1), txs, accounts, categories).expense).toBe(600);
+    expect(summarizeMonth(periodRange('2026-09', 1), txs, accounts, categories).expense).toBe(100);
+  });
+
+  it('開始日が 6日なら 6日から翌月 5日までを集計する', () => {
+    const expense = (date: string, amount: number) =>
+      makeTx({ type: 'expense', amount, accountId: wallet.id, categoryId: food.id, date });
+    const txs = [
+      expense('2026-10-05', 1_000),
+      expense('2026-10-06', 2_000),
+      expense('2026-11-05', 3_000),
+      expense('2026-11-06', 4_000),
+    ];
+    expect(summarizeMonth(periodRange('2026-10', 6), txs, accounts, categories).expense).toBe(
+      5_000,
+    );
   });
 });
 
@@ -69,7 +84,7 @@ describe('カテゴリ別内訳', () => {
       makeTx({ type: 'expense', amount: 10_000, accountId: wallet.id, categoryId: daily.id }),
       makeTx({ type: 'expense', amount: 30_000, accountId: wallet.id, categoryId: food.id }),
     ];
-    const s = summarizeMonth('2026-10', txs, accounts, categories);
+    const s = summarizeMonth(periodRange('2026-10', 1), txs, accounts, categories);
     expect(s.byCategory).toEqual([
       { categoryId: food.id, name: '食費', amount: 30_000, percent: 75 },
       { categoryId: daily.id, name: '日用品', amount: 10_000, percent: 25 },
@@ -81,7 +96,7 @@ describe('カテゴリ別内訳', () => {
     const txs = [
       makeTx({ type: 'expense', amount: 1_000, accountId: wallet.id, categoryId: hidden.id }),
     ];
-    const s = summarizeMonth('2026-10', txs, accounts, [...categories, hidden]);
+    const s = summarizeMonth(periodRange('2026-10', 1), txs, accounts, [...categories, hidden]);
     expect(s.byCategory[0].name).toBe('Amazon');
   });
 });
@@ -93,7 +108,7 @@ describe('クレジットカード別の月利用額', () => {
       makeTx({ type: 'expense', amount: 3_000, accountId: cardB.id, categoryId: food.id }),
       makeTx({ type: 'expense', amount: 999, accountId: wallet.id, categoryId: food.id }),
     ];
-    const s = summarizeMonth('2026-10', txs, accounts, categories);
+    const s = summarizeMonth(periodRange('2026-10', 1), txs, accounts, categories);
     expect(s.byCard).toEqual([
       { accountId: cardA.id, name: 'Aカード', amount: 12_000 },
       { accountId: cardB.id, name: 'Bカード', amount: 3_000 },
@@ -112,7 +127,7 @@ describe('クレジットカード別の月利用額', () => {
         date: '2026-09-05',
       }),
     ];
-    const s = summarizeMonth('2026-09', txs, [hiddenCard, cardB], categories);
+    const s = summarizeMonth(periodRange('2026-09', 1), txs, [hiddenCard, cardB], categories);
     expect(s.byCard).toEqual([{ accountId: cardA.id, name: 'Aカード', amount: 8_000 }]);
   });
 });

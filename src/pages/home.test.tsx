@@ -1,6 +1,12 @@
 import { within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addAccount, saveTransaction, setAccountHidden, setBudget } from '../db/repository';
+import {
+  addAccount,
+  saveTransaction,
+  setAccountHidden,
+  setBudget,
+  setMonthStartDay,
+} from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import type { Transaction } from '../domain/types';
 import type { TransactionDraft } from '../domain/validation';
@@ -88,6 +94,105 @@ function sectionLabels() {
     .getAllByRole('region')
     .map((r) => r.getAttribute('aria-label') ?? r.querySelector('h2')?.textContent);
 }
+
+describe('月の開始日', () => {
+  /** 今日を指定してホームを開く */
+  async function renderHomeOn(today: Date) {
+    vi.useFakeTimers({ now: today, toFake: ['Date'] });
+    const result = await renderApp('/');
+    vi.useRealTimers();
+    return result;
+  }
+
+  it('開始日が 6日なら、6日から翌月 5日までの取引で集計する', async () => {
+    mockViewport('desktop');
+    const { bank, cardA, cat, save } = await setup();
+    await setMonthStartDay(6);
+    await save({ date: '2026-10-05', amount: '1000', categoryId: cat('食費') });
+    await save({ date: '2026-10-06', amount: '2000', categoryId: cat('食費') });
+    await save({ date: '2026-11-05', amount: '3000', accountId: cardA, categoryId: cat('日用品') });
+    await save({ date: '2026-11-06', amount: '4000', categoryId: cat('食費') });
+    await save({
+      type: 'income',
+      date: '2026-10-25',
+      amount: '250000',
+      accountId: bank,
+      categoryId: cat('給与', 'income'),
+    });
+
+    await renderHomeOn(new Date(2026, 9, 10));
+    expect(screen.getByRole('heading', { level: 2, name: /2026年10月/ })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('expense')).toHaveTextContent('¥5,000'));
+    expect(screen.getByTestId('net')).toHaveTextContent('¥245,000');
+    const categories = screen.getByRole('region', { name: 'カテゴリ別の出費' });
+    expect(
+      within(categories)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['日用品¥3,000（60%）', '食費¥2,000（40%）']);
+    expect(screen.getByTestId('card-total')).toHaveTextContent('¥3,000');
+  });
+
+  it('期間を月名と並べて表示する', async () => {
+    await setup();
+    await setMonthStartDay(6);
+    await renderHomeOn(new Date(2026, 9, 10));
+    const heading = screen.getByRole('heading', { level: 2, name: /^2026年10月/ });
+    expect(heading).toHaveAccessibleName(/^2026年10月\s*10月6日〜11月5日$/);
+  });
+
+  it('年をまたぐ月の期間と集計', async () => {
+    const { cat, save } = await setup();
+    await setMonthStartDay(6);
+    await save({ date: '2026-12-05', amount: '1000', categoryId: cat('食費') });
+    await save({ date: '2026-12-06', amount: '2000', categoryId: cat('食費') });
+    await save({ date: '2027-01-05', amount: '3000', categoryId: cat('食費') });
+    await save({ date: '2027-01-06', amount: '4000', categoryId: cat('食費') });
+
+    await renderHomeOn(new Date(2026, 11, 20));
+    expect(
+      screen.getByRole('heading', { level: 2, name: /^2026年12月\s*12月6日〜1月5日$/ }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('expense')).toHaveTextContent('¥5,000'));
+  });
+
+  it('開始日が 1日なら期間を出さない', async () => {
+    await setup();
+    await renderHomeOn(new Date(2026, 9, 10));
+    expect(screen.getByRole('heading', { level: 2, name: '2026年10月' })).toBeInTheDocument();
+  });
+
+  it('開始日より前の日は前の月になる', async () => {
+    await setup();
+    await setMonthStartDay(6);
+    await renderHomeOn(new Date(2026, 10, 3));
+    expect(screen.getByRole('heading', { level: 2, name: /2026年10月/ })).toBeInTheDocument();
+  });
+
+  it('開始日を変えると、月を選んでいなければ今月を求め直す', async () => {
+    await setup();
+    await renderHomeOn(new Date(2026, 10, 3));
+    expect(screen.getByRole('heading', { level: 2, name: /2026年11月/ })).toBeInTheDocument();
+
+    await setMonthStartDay(6);
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /2026年10月/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('月を選んでいれば、開始日を変えても同じ名前の月のまま', async () => {
+    await setup();
+    const { user } = await renderHomeOn(new Date(2026, 10, 3));
+    await user.click(screen.getByRole('button', { name: '次月' }));
+    expect(screen.getByRole('heading', { level: 2, name: '2026年12月' })).toBeInTheDocument();
+
+    await setMonthStartDay(6);
+    // 開始日 6日の今月は 2026年10月だが、選んだ 12月のまま範囲だけが変わる
+    expect(
+      await screen.findByRole('heading', { level: 2, name: /^2026年12月\s*12月6日〜1月5日$/ }),
+    ).toBeInTheDocument();
+  });
+});
 
 describe('セクションの並び順', () => {
   it('PC 版では予算超過のアラートの下に、収支・カテゴリ・カード・予算・残高の順で並ぶ', async () => {

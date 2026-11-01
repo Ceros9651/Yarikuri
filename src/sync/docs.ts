@@ -1,8 +1,14 @@
-import type { Account, Budget, Category, Transaction } from '../domain/types';
+import type { Account, AppSettings, Budget, Category, Transaction } from '../domain/types';
 import type { YarikuriDB } from '../db/db';
 
 /** 端末どうしで同期する表。Firestore のコレクション名も同じ */
-export const SYNC_TABLES = ['accounts', 'categories', 'transactions', 'budgets'] as const;
+export const SYNC_TABLES = [
+  'accounts',
+  'categories',
+  'transactions',
+  'budgets',
+  'settings',
+] as const;
 export type SyncTable = (typeof SYNC_TABLES)[number];
 
 export interface SyncRecords {
@@ -10,6 +16,7 @@ export interface SyncRecords {
   categories: Category;
   transactions: Transaction;
   budgets: Budget;
+  settings: AppSettings;
 }
 export type SyncRecord = SyncRecords[SyncTable];
 
@@ -37,7 +44,7 @@ export function docIdOf<T extends SyncTable>(table: T, record: SyncRecords[T]): 
     const budget = record as Budget;
     return budgetDocId(budget.categoryId, budget.month);
   }
-  return (record as Account | Category | Transaction).id;
+  return (record as Account | Category | Transaction | AppSettings).id;
 }
 
 /** docId の記録を Dexie から読む。無ければ undefined */

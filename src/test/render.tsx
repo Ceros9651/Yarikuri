@@ -1,12 +1,16 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { expect } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRoutes } from '../App';
 import { db } from '../db/db';
 import { ensureSeeded } from '../db/seed';
 import type { SyncOptions } from '../sync/SyncContext';
 
-/** アプリ全体を指定パスで描画する。初期データの投入を待ってから返す */
+/**
+ * アプリ全体を指定パスで描画する。初期データの投入と、月の開始日を読み終えて画面が出るのを
+ * 待ってから返す
+ */
 export async function renderApp(path = '/', sync?: SyncOptions) {
   await ensureSeeded();
   const user = userEvent.setup();
@@ -15,6 +19,7 @@ export async function renderApp(path = '/', sync?: SyncOptions) {
       <AppRoutes sync={sync} />
     </MemoryRouter>,
   );
+  await waitFor(() => expect(result.container).not.toBeEmptyDOMElement());
   return { user, ...result };
 }
 

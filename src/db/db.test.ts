@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { balancesAtMonthEnd, computeBalances, type BalanceDelta } from '../domain/balance';
+import { balancesAsOf, computeBalances, type BalanceDelta } from '../domain/balance';
 import { lastDayOfMonth } from '../domain/date';
 import type { Transaction } from '../domain/types';
 import { makeAccount, makeCategory, makeTx } from '../test/factories';
@@ -41,7 +41,8 @@ async function expectDeltasMatchTransactions(target: YarikuriDB = db) {
   const transactions = await target.transactions.toArray();
   const deltas = await target.balanceDeltas.toArray();
   for (const month of ['2024-01', '2025-06', '2026-10']) {
-    expect(balancesAtMonthEnd(accounts, deltas, month)).toEqual(
+    const monthTransactions = transactions.filter((t) => t.date.startsWith(`${month}-`));
+    expect(balancesAsOf(accounts, deltas, monthTransactions, lastDayOfMonth(month))).toEqual(
       computeBalances(accounts, transactions, lastDayOfMonth(month)),
     );
   }
@@ -73,7 +74,7 @@ describe('version 4 への更新', () => {
 
     db = new YarikuriDB(name);
     await db.open();
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBe(5);
     expect(await db.balanceDeltas.count()).toBeGreaterThan(0);
     await expectDeltasMatchTransactions();
   });
@@ -86,6 +87,33 @@ describe('version 4 への更新', () => {
     await db.balanceDeltas.put({ accountId: wallet.id, month: '2020-01', delta: 999 });
     await rebuildBalanceDeltas(db);
     await expectDeltasMatchTransactions();
+  });
+});
+
+describe('version 5 への更新', () => {
+  it('version 4 の DB を開き直すと settings が空で既存データが残る', async () => {
+    await db.delete();
+    const old = new Dexie(name);
+    old.version(4).stores({
+      accounts: 'id, type, sortOrder',
+      categories: 'id, kind, sortOrder',
+      transactions: 'id, date, accountId, toAccountId, categoryId',
+      meta: 'key',
+      budgets: '[categoryId+month], categoryId',
+      outbox: '[table+docId]',
+      balanceDeltas: '[accountId+month]',
+    });
+    await old.open();
+    await old.table('accounts').bulkAdd(accounts);
+    await old.table('budgets').add({ categoryId: 'c1', month: '2026-10', amount: 40_000 });
+    old.close();
+
+    db = new YarikuriDB(name);
+    await db.open();
+    expect(db.verno).toBe(5);
+    expect(await db.settings.count()).toBe(0);
+    expect(await db.accounts.count()).toBe(accounts.length);
+    expect(await db.budgets.get(['c1', '2026-10'])).toMatchObject({ amount: 40_000 });
   });
 });
 

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   balanceAsOf,
-  balancesAtMonthEnd,
+  balancesAsOf,
   buildBalanceDeltas,
   computeAdjustmentAmount,
   computeBalance,
   computeBalances,
 } from './balance';
-import { addMonths, lastDayOfMonth } from './date';
+import { addMonths, lastDayOfMonth, periodRange } from './date';
 import { makeAccount, makeCategory, makeTx } from '../test/factories';
 import { makeManyTransactions, seededRandom } from '../test/manyTransactions';
 
@@ -158,7 +158,8 @@ describe('口座×月の増減からの残高', () => {
     // 記録の前後の月も含める
     for (let i = -2; i < 38; i++) {
       const month = addMonths('2023-11', i);
-      expect(balancesAtMonthEnd(accounts, deltas, month)).toEqual(
+      const monthTransactions = transactions.filter((t) => t.date.startsWith(`${month}-`));
+      expect(balancesAsOf(accounts, deltas, monthTransactions, lastDayOfMonth(month))).toEqual(
         computeBalances(accounts, transactions, lastDayOfMonth(month)),
       );
     }
@@ -179,9 +180,19 @@ describe('口座×月の増減からの残高', () => {
     }
   });
 
+  it('開始日が 6日の月の最終日時点の残高が全件から求めた残高と一致する', () => {
+    for (let i = 0; i < 36; i++) {
+      const { start, end } = periodRange(addMonths('2023-11', i), 6);
+      const periodTransactions = transactions.filter((t) => start <= t.date && t.date <= end);
+      expect(balancesAsOf(accounts, deltas, periodTransactions, end)).toEqual(
+        computeBalances(accounts, transactions, end),
+      );
+    }
+  });
+
   it('クレジットカードは残高を持たない', () => {
     expect(balanceAsOf(card, deltas, [], '2026-10-10')).toBeNull();
-    expect(balancesAtMonthEnd(accounts, deltas, '2026-10').has(card.id)).toBe(false);
+    expect(balancesAsOf(accounts, deltas, [], '2026-10-31').has(card.id)).toBe(false);
   });
 
   it('同じ口座への振替は増減を生まない', () => {

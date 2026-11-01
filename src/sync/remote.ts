@@ -1,5 +1,11 @@
 import type { ZodType } from 'zod';
-import { accountSchema, budgetSchema, categorySchema, transactionSchema } from '../domain/backup';
+import {
+  accountSchema,
+  budgetSchema,
+  categorySchema,
+  settingsSchema,
+  transactionSchema,
+} from '../domain/backup';
 import { docIdOf, type SyncRecord, type SyncRecords, type SyncTable } from './docs';
 
 /** サインインしている Google アカウント */
@@ -89,6 +95,7 @@ const schemas: { [T in SyncTable]: ZodType<SyncRecords[T]> } = {
   categories: categorySchema,
   transactions: transactionSchema,
   budgets: budgetSchema,
+  settings: settingsSchema,
 };
 
 /** クラウドの記録を検証する。形式が違う・docId と中身が合わないときは null */

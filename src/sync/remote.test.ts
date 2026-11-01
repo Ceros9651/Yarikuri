@@ -32,6 +32,17 @@ describe('parseRemoteRecord', () => {
     expect(parseRemoteRecord('accounts', 'a1', 'text')).toBeNull();
   });
 
+  it('月の開始日は 1〜28 の整数だけ受け取る', () => {
+    expect(parseRemoteRecord('settings', 'app', { id: 'app', monthStartDay: 6 })).toEqual({
+      id: 'app',
+      monthStartDay: 6,
+    });
+    for (const monthStartDay of [0, 29, 6.5, '6']) {
+      expect(parseRemoteRecord('settings', 'app', { id: 'app', monthStartDay })).toBeNull();
+    }
+    expect(parseRemoteRecord('settings', 'other', { id: 'other', monthStartDay: 6 })).toBeNull();
+  });
+
   it('docId と中身の id が合わない記録は捨てる', () => {
     expect(parseRemoteRecord('transactions', 'other', tx)).toBeNull();
     expect(

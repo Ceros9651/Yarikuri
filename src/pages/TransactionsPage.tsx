@@ -3,8 +3,8 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { CategoryExpenses } from '../components/CategoryExpenses';
 import { useMonth } from '../components/MonthContext';
 import { MonthSwitcher } from '../components/MonthSwitcher';
-import { calendarWeeks, dailyTotals } from '../domain/calendar';
-import { todayString } from '../domain/date';
+import { calendarDayLabel, calendarWeeks, dailyTotals } from '../domain/calendar';
+import { isInPeriod, todayString, type PeriodRange } from '../domain/date';
 import { formatYen } from '../domain/format';
 import { summarizeMonth, UNCATEGORIZED } from '../domain/summary';
 import { TRANSACTION_TYPE_LABELS, type Transaction } from '../domain/types';
@@ -83,14 +83,14 @@ function formatDayLabel(date: string): string {
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
 interface CalendarProps {
-  month: string;
+  range: PeriodRange;
   transactions: readonly Transaction[];
   selected: string | null;
   onSelect: (date: string) => void;
 }
 
 /** 月のカレンダー。各日の枠に出費・収入の合計を出し、押すとその日で絞り込む。スマホ版では CSS で隠す */
-function TransactionCalendar({ month, transactions, selected, onSelect }: CalendarProps) {
+function TransactionCalendar({ range, transactions, selected, onSelect }: CalendarProps) {
   const totals = dailyTotals(transactions);
   const today = todayString();
   return (
@@ -101,7 +101,7 @@ function TransactionCalendar({ month, transactions, selected, onSelect }: Calend
             {w}
           </span>
         ))}
-        {calendarWeeks(month)
+        {calendarWeeks(range)
           .flat()
           .map((date, i) => {
             if (date === null) return <div key={`blank-${i}`} className="tx-calendar-blank" />;
@@ -123,7 +123,7 @@ function TransactionCalendar({ month, transactions, selected, onSelect }: Calend
                 aria-current={date === today ? 'date' : undefined}
                 onClick={() => onSelect(date)}
               >
-                <span className="tx-calendar-date">{Number(date.slice(8))}</span>
+                <span className="tx-calendar-date">{calendarDayLabel(date, range)}</span>
                 {expense > 0 && <span className="amount expense">-{formatYen(expense)}</span>}
                 {income > 0 && <span className="amount income">+{formatYen(income)}</span>}
               </button>
@@ -135,10 +135,11 @@ function TransactionCalendar({ month, transactions, selected, onSelect }: Calend
 }
 
 export function TransactionsPage() {
-  const { month: selectedMonth } = useMonth();
-  const data = useMonthData(selectedMonth);
+  const { month: selectedMonth, range: selectedRange } = useMonth();
+  const data = useMonthData(selectedMonth, selectedRange);
   // 月を切り替えた直後は、新しい月を読み終えるまで前の月の内容を出し続ける
   const month = data?.month ?? selectedMonth;
+  const range = data?.range ?? selectedRange;
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -147,7 +148,7 @@ export function TransactionsPage() {
   const filtered = category !== null || account !== null;
   // 選択中の月に含まれない日付（月を切り替えた直後など）では絞り込まない
   const dateParam = searchParams.get('date');
-  const day = dateParam?.startsWith(`${month}-`) ? dateParam : null;
+  const day = dateParam !== null && isInPeriod(dateParam, range) ? dateParam : null;
   const isDesktop = useIsDesktop();
   // スマホ版では、絞り込みも全取引の一覧（view=list）も求めていなければカテゴリ別の出費を出す
   const showBreakdown =
@@ -202,10 +203,10 @@ export function TransactionsPage() {
 
   // 月を切り替えたら、前の月の日付の絞り込みを URL からも消す
   useEffect(() => {
-    if (dateParam !== null && !dateParam.startsWith(`${month}-`)) setFilter('date', null);
+    if (dateParam !== null && !isInPeriod(dateParam, range)) setFilter('date', null);
     // setFilter は描画のたびに作り直されるので依存に含めない
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateParam, month]);
+  }, [dateParam, range.start, range.end]);
 
   const expenseTotal = rows
     .filter((tx) => tx.type === 'expense')
@@ -218,7 +219,7 @@ export function TransactionsPage() {
       : 'この月の取引はありません';
 
   if (showBreakdown) {
-    const summary = data && summarizeMonth(month, data.transactions, accounts, categories);
+    const summary = data && summarizeMonth(range, data.transactions, accounts, categories);
     return (
       <>
         {/* タブで選択中の画面名と重なるので、見出しは読み上げ用にだけ残す */}
@@ -245,7 +246,7 @@ export function TransactionsPage() {
           <MonthSwitcher />
           {data && (
             <TransactionCalendar
-              month={month}
+              range={range}
               transactions={matched}
               selected={day}
               onSelect={(date) => setFilter('date', date === day ? null : date)}
