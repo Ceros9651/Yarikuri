@@ -1,4 +1,4 @@
-import { within } from '@testing-library/react';
+import { cleanup, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addAccount,
@@ -9,12 +9,24 @@ import {
 } from '../db/repository';
 import { ensureSeeded } from '../db/seed';
 import { computeBalance } from '../domain/balance';
+import { addMonths, monthOf, todayString } from '../domain/date';
+import { formatYen } from '../domain/format';
 import { db, renderApp, resetDb, screen, waitFor } from '../test/render';
 
 beforeEach(resetDb);
 
 const accountsSection = () => screen.getByRole('region', { name: '口座・カード' });
 const addForm = () => screen.getByRole('form', { name: '口座の追加' });
+const editingRow = () =>
+  screen.getByLabelText('口座名', { selector: '.list input' }).closest('li')!;
+const expenseDraft = (accountId: string, categoryId: string) => ({
+  type: 'expense' as const,
+  date: todayString(),
+  amount: '0',
+  accountId,
+  toAccountId: '',
+  categoryId,
+});
 
 describe('口座管理', () => {
   it('初期残高を指定して銀行口座を複数登録できる', async () => {
@@ -31,7 +43,7 @@ describe('口座管理', () => {
     }
     const banks = await within(accountsSection()).findByRole('group', { name: '銀行' });
     await waitFor(() => expect(within(banks).getAllByRole('listitem')).toHaveLength(2));
-    expect(banks).toHaveTextContent('A銀行（初期残高 ¥120,000）');
+    await waitFor(() => expect(banks).toHaveTextContent('A銀行（残高 ¥120,000）'));
     const a = (await db.accounts.toArray()).find((x) => x.name === 'A銀行')!;
     expect(computeBalance(a, [])).toBe(120_000);
   });
@@ -48,7 +60,7 @@ describe('口座管理', () => {
 
     const cards = await within(accountsSection()).findByRole('group', { name: 'クレジットカード' });
     await waitFor(() => expect(within(cards).getAllByRole('listitem')).toHaveLength(2));
-    expect(cards).not.toHaveTextContent('初期残高');
+    expect(cards).not.toHaveTextContent('残高');
     const saved = (await db.accounts.where('type').equals('credit').toArray()).map(
       (a) => a.initialBalance,
     );
@@ -72,19 +84,80 @@ describe('口座管理', () => {
     expect(await db.accounts.count()).toBe(1);
   });
 
-  it('名前と初期残高を編集でき、残高に反映される', async () => {
+  it('名前と現在の残高を編集でき、残高に反映される', async () => {
     await ensureSeeded();
     const id = await addAccount({ name: 'A銀行', type: 'bank', initialBalance: 120_000 });
     const { user } = await renderApp('/settings');
+    await screen.findByText('（残高 ¥120,000）');
     await user.click(await screen.findByRole('button', { name: 'A銀行を編集' }));
-    const row = screen.getByLabelText('口座名', { selector: '.list input' }).closest('li')!;
-    const balance = within(row).getByLabelText('初期残高');
+    const row = editingRow();
+    const balance = within(row).getByLabelText('現在の残高');
+    expect(balance).toHaveValue('120000');
     await user.clear(balance);
     await user.type(balance, '100000');
     await user.click(within(row).getByRole('button', { name: '保存' }));
 
-    await screen.findByText('（初期残高 ¥100,000）');
+    await screen.findByText('（残高 ¥100,000）');
     expect(computeBalance((await db.accounts.get(id))!, [])).toBe(100_000);
+  });
+
+  it('前の月の取引があっても、入力した現在の残高がそのまま残高になる', async () => {
+    await ensureSeeded();
+    const wallet = (await db.accounts.toArray())[0];
+    await db.accounts.update(wallet.id, { initialBalance: 10_000 });
+    const food = (await db.categories.toArray()).find((c) => c.name === '食費')!.id;
+    const today = todayString();
+    for (const [date, amount] of [
+      [`${addMonths(monthOf(today), -1)}-15`, '3000'],
+      [today, '1000'],
+    ]) {
+      await saveTransaction({ ...expenseDraft(wallet.id, food), date, amount }, '');
+    }
+    const { user } = await renderApp('/settings');
+    await user.click(await screen.findByRole('button', { name: `${wallet.name}を編集` }));
+    const row = editingRow();
+    const balance = within(row).getByLabelText('現在の残高');
+    await waitFor(() => expect(balance).toHaveValue('6000'));
+    await user.clear(balance);
+    await user.type(balance, '20000');
+    await user.click(within(row).getByRole('button', { name: '保存' }));
+
+    await screen.findByText('（残高 ¥20,000）');
+    const saved = (await db.accounts.get(wallet.id))!;
+    expect(computeBalance(saved, await db.transactions.toArray(), today)).toBe(20_000);
+
+    cleanup();
+    await renderApp('/');
+    await waitFor(() => expect(screen.getByTestId('balance-total')).toHaveTextContent('¥20,000'));
+  });
+
+  it('現在の残高は負の値も入力できる', async () => {
+    await ensureSeeded();
+    await addAccount({ name: 'A銀行', type: 'bank', initialBalance: 1_000 });
+    const { user } = await renderApp('/settings');
+    await screen.findByText('（残高 ¥1,000）');
+    await user.click(await screen.findByRole('button', { name: 'A銀行を編集' }));
+    const balance = within(editingRow()).getByLabelText('現在の残高');
+    await user.clear(balance);
+    await user.type(balance, '-500');
+    await user.click(within(editingRow()).getByRole('button', { name: '保存' }));
+
+    await screen.findByText(`（残高 ${formatYen(-500)}）`);
+  });
+
+  it('名前だけ変えても初期残高は変わらない', async () => {
+    await ensureSeeded();
+    const id = await addAccount({ name: 'A銀行', type: 'bank', initialBalance: 120_000 });
+    const { user } = await renderApp('/settings');
+    await screen.findByText('（残高 ¥120,000）');
+    await user.click(await screen.findByRole('button', { name: 'A銀行を編集' }));
+    const name = within(editingRow()).getByLabelText('口座名');
+    await user.clear(name);
+    await user.type(name, 'B銀行');
+    await user.click(within(editingRow()).getByRole('button', { name: '保存' }));
+
+    await screen.findByRole('button', { name: 'B銀行を編集' });
+    expect(await db.accounts.get(id)).toMatchObject({ name: 'B銀行', initialBalance: 120_000 });
   });
 
   it('解約したカードを非表示にすると支払元から消え、過去の取引は残る。再表示もできる', async () => {

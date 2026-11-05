@@ -1,7 +1,7 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { balancesAsOf, computeBalance } from '../domain/balance';
-import { lastDayOfMonth } from '../domain/date';
+import { addMonths, lastDayOfMonth, monthOf, todayString } from '../domain/date';
 import type { TransactionDraft } from '../domain/validation';
 import { YarikuriDB } from './db';
 import * as repo from './repository';
@@ -139,13 +139,41 @@ describe('口座', () => {
     expect(await db.accounts.count()).toBe(0);
   });
 
-  it('名前と初期残高を編集できる', async () => {
+  it('名前と現在の残高を編集でき、前の月の取引があっても今日時点の残高がその額になる', async () => {
+    await ensureSeeded(db);
+    const food = (await db.categories.toArray()).find((c) => c.name === '食費')!.id;
+    const id = await repo.addAccount({ name: 'A銀行', type: 'bank', initialBalance: 10_000 }, db);
+    const today = todayString();
+    const lastMonth = `${addMonths(monthOf(today), -1)}-15`;
+    for (const [date, amount] of [
+      [lastMonth, '3000'],
+      [today, '500'],
+    ]) {
+      await repo.saveTransaction(
+        draft({ date, amount, accountId: id, categoryId: food }),
+        '',
+        undefined,
+        db,
+      );
+    }
+
+    await repo.updateAccount(id, { name: 'A銀行 普通', currentBalance: 20_000 }, db);
+    const account = (await db.accounts.get(id))!;
+    expect(account.name).toBe('A銀行 普通');
+    expect(account.initialBalance).toBe(23_500);
+    expect(computeBalance(account, await db.transactions.toArray(), today)).toBe(20_000);
+  });
+
+  it('現在の残高を渡さなければ名前だけが変わり、初期残高は変わらない', async () => {
     const id = await repo.addAccount({ name: 'A銀行', type: 'bank', initialBalance: 120_000 }, db);
-    await repo.updateAccount(id, { name: 'A銀行 普通', initialBalance: 100_000 }, db);
-    expect(await db.accounts.get(id)).toMatchObject({
-      name: 'A銀行 普通',
-      initialBalance: 100_000,
-    });
+    await repo.updateAccount(id, { name: 'B銀行' }, db);
+    expect(await db.accounts.get(id)).toMatchObject({ name: 'B銀行', initialBalance: 120_000 });
+  });
+
+  it('クレジットカードの初期残高は 0 のまま', async () => {
+    const id = await repo.addAccount({ name: 'Aカード', type: 'credit' }, db);
+    await repo.updateAccount(id, { name: 'Bカード', currentBalance: 5_000 }, db);
+    expect(await db.accounts.get(id)).toMatchObject({ name: 'Bカード', initialBalance: 0 });
   });
 
   it('非表示と再表示ができ、削除関数はない', async () => {
@@ -494,7 +522,7 @@ describe('送れていない変更の記録（outbox）', () => {
   it('口座の追加・変更・非表示で、その口座が1件積まれる', async () => {
     await seeded();
     const bank = await repo.addAccount({ name: 'A銀行', type: 'bank' }, db);
-    await repo.updateAccount(bank, { name: 'B銀行', initialBalance: 100 }, db);
+    await repo.updateAccount(bank, { name: 'B銀行', currentBalance: 100 }, db);
     await repo.setAccountHidden(bank, true, db);
     expect(await outbox()).toEqual([`accounts/${bank}`]);
   });

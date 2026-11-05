@@ -7,10 +7,12 @@ import {
   type Account,
   type AccountType,
 } from '../../domain/types';
-import { parseInitialBalance } from '../../domain/validation';
-import { useAccounts } from '../../hooks/useData';
+import { todayString } from '../../domain/date';
+import { parseBalance, parseInitialBalance } from '../../domain/validation';
+import { useAccounts, useBalanceAsOf } from '../../hooks/useData';
 
 const INITIAL_BALANCE_ERROR = '初期残高は0以上の整数で入力してください';
+const CURRENT_BALANCE_ERROR = '現在の残高は整数で入力してください';
 
 function errorMessage(err: unknown): string {
   if (err instanceof ValidationError) return err.message;
@@ -20,16 +22,31 @@ function errorMessage(err: unknown): string {
 function AccountRow({ account }: { account: Account }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(account.name);
-  const [initialBalance, setInitialBalance] = useState(String(account.initialBalance));
+  const [balanceInput, setBalanceInput] = useState('');
+  // 編集を始めた時点の今日時点の残高。入力がこの値のままなら初期残高を変えない
+  const [startBalance, setStartBalance] = useState<number | null>(null);
   const [error, setError] = useState('');
   const isCredit = account.type === 'credit';
+  const currentBalance = useBalanceAsOf(isCredit ? undefined : account.id, todayString());
+
+  function startEditing() {
+    const balance = currentBalance ?? null;
+    setName(account.name);
+    setStartBalance(balance);
+    setBalanceInput(balance === null ? '' : String(balance));
+    setError('');
+    setEditing(true);
+  }
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
-    const balance = parseInitialBalance(initialBalance);
-    if (!isCredit && balance === null) return setError(INITIAL_BALANCE_ERROR);
+    const balance = isCredit ? null : parseBalance(balanceInput);
+    if (!isCredit && balance === null) return setError(CURRENT_BALANCE_ERROR);
     try {
-      await updateAccount(account.id, { name, initialBalance: balance ?? 0 });
+      await updateAccount(account.id, {
+        name,
+        currentBalance: balance === null || balance === startBalance ? undefined : balance,
+      });
       setEditing(false);
       setError('');
     } catch (err) {
@@ -44,10 +61,10 @@ function AccountRow({ account }: { account: Account }) {
           <input aria-label="口座名" value={name} onChange={(e) => setName(e.target.value)} />
           {!isCredit && (
             <input
-              aria-label="初期残高"
+              aria-label="現在の残高"
               inputMode="numeric"
-              value={initialBalance}
-              onChange={(e) => setInitialBalance(e.target.value)}
+              value={balanceInput}
+              onChange={(e) => setBalanceInput(e.target.value)}
             />
           )}
           <button type="submit" className="primary">
@@ -58,7 +75,7 @@ function AccountRow({ account }: { account: Account }) {
             onClick={() => {
               setEditing(false);
               setName(account.name);
-              setInitialBalance(String(account.initialBalance));
+              setBalanceInput(startBalance === null ? '' : String(startBalance));
               setError('');
             }}
           >
@@ -78,15 +95,15 @@ function AccountRow({ account }: { account: Account }) {
     <li>
       <span className="truncate">
         {account.name}
-        {!isCredit && (
-          <span className="muted">（初期残高 {formatYen(account.initialBalance)}）</span>
+        {!isCredit && currentBalance != null && (
+          <span className="muted">（残高 {formatYen(currentBalance)}）</span>
         )}
       </span>
       <span className="row-actions">
         <button
           type="button"
           className="link"
-          onClick={() => setEditing(true)}
+          onClick={startEditing}
           aria-label={`${account.name}を編集`}
         >
           編集

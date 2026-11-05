@@ -6,6 +6,7 @@ import {
   computeAdjustmentAmount,
   computeBalance,
   computeBalances,
+  initialBalanceFor,
 } from './balance';
 import { addMonths, lastDayOfMonth, periodRange } from './date';
 import { makeAccount, makeCategory, makeTx } from '../test/factories';
@@ -125,6 +126,60 @@ describe('残高調整の差額', () => {
     expect(
       computeAdjustmentAmount(wallet, buildBalanceDeltas([later]), [later], '2026-10-10', 5_000),
     ).toBe(-300);
+  });
+
+  describe('現在の残高から初期残高を逆算する', () => {
+    const date = '2026-10-15';
+    const balanceAfter = (
+      wallet: ReturnType<typeof makeAccount>,
+      txs: ReturnType<typeof makeTx>[],
+      target: number,
+      on = date,
+    ) => {
+      const deltas = buildBalanceDeltas(txs);
+      const month = txs.filter((t) => t.date.startsWith('2026-10'));
+      const initialBalance = initialBalanceFor(wallet, deltas, month, date, target);
+      return balanceAsOf({ ...wallet, initialBalance }, deltas, month, on);
+    };
+
+    it('前の月の増減があっても、その日の残高が目標の額になる', () => {
+      const wallet = makeAccount('財布', 'cash', 10_000);
+      const txs = [
+        makeTx({ type: 'expense', amount: 3_000, accountId: wallet.id, date: '2026-09-20' }),
+      ];
+      expect(balanceAfter(wallet, txs, 20_000)).toBe(20_000);
+    });
+
+    it('当月のその日までの取引も差し引く', () => {
+      const wallet = makeAccount('財布', 'cash', 10_000);
+      const txs = [
+        makeTx({ type: 'expense', amount: 3_000, accountId: wallet.id, date: '2026-09-20' }),
+        makeTx({ type: 'income', amount: 1_000, accountId: wallet.id, date: '2026-10-05' }),
+      ];
+      const deltas = buildBalanceDeltas(txs);
+      expect(initialBalanceFor(wallet, deltas, [txs[1]], date, 8_000)).toBe(10_000);
+      expect(balanceAfter(wallet, txs, 5_000)).toBe(5_000);
+    });
+
+    it('その日より後の取引は含めず、翌日以降の残高に反映される', () => {
+      const wallet = makeAccount('財布', 'cash', 0);
+      const txs = [
+        makeTx({ type: 'expense', amount: 2_000, accountId: wallet.id, date: '2026-10-16' }),
+      ];
+      expect(balanceAfter(wallet, txs, 5_000)).toBe(5_000);
+      expect(balanceAfter(wallet, txs, 5_000, '2026-10-16')).toBe(3_000);
+    });
+
+    it('負の額も目標にできる', () => {
+      const bank = makeAccount('A銀行', 'bank', 1_000);
+      const txs = [makeTx({ type: 'income', amount: 500, accountId: bank.id, date: '2026-08-01' })];
+      expect(balanceAfter(bank, txs, -500)).toBe(-500);
+    });
+
+    it('クレジットカードはエラーになる', () => {
+      const card = makeAccount('Aカード', 'credit');
+      expect(() => initialBalanceFor(card, [], [], date, 0)).toThrow();
+    });
   });
 });
 

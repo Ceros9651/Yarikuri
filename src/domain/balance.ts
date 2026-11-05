@@ -148,3 +148,20 @@ export function computeAdjustmentAmount(
   if (current === null) throw new Error('クレジットカードは残高調整できません');
   return actualBalance - current;
 }
+
+/**
+ * date（その日を含む）時点の残高が targetBalance になるように保存する初期残高。
+ * date までの取引の増減を targetBalance から差し引いた値になる。
+ * deltas・monthTransactions は balanceAsOf と同じ
+ */
+export function initialBalanceFor(
+  account: Account,
+  deltas: readonly BalanceDelta[],
+  monthTransactions: readonly Transaction[],
+  date: string,
+  targetBalance: number,
+): number {
+  const current = balanceAsOf(account, deltas, monthTransactions, date);
+  if (current === null) throw new Error('クレジットカードは残高を持ちません');
+  return targetBalance - (current - account.initialBalance);
+}
