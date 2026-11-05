@@ -37,8 +37,25 @@ jobs:
         with:
           path: dist
 
-  deploy:
+  # アプリより先に firestore.rules を反映する。アプリだけ新しくなると、ルールにない書き込みが拒否されて同期が止まる
+  rules:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # ルールの反映だけができるサービスアカウントの鍵。未設定ならここで失敗し、アプリも公開しない
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - run: npx -y firebase-tools@14 deploy --only firestore:rules --project "$PROJECT_ID" --non-interactive
+        env:
+          PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+
+  deploy:
+    needs: [build, rules]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

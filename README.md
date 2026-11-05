@@ -110,15 +110,21 @@ Firebase プロジェクトを新しく用意する手順:
    npx firebase-tools deploy --only firestore:rules --project <projectId>
    ```
 
-   CLI を使わない場合は、コンソールの **Firestore Database → ルール** に firestore.rules の中身を貼って公開する。ルールを変えたときはやり直す（CI はルールを反映しない）
+   CLI を使わない場合は、コンソールの **Firestore Database → ルール** に firestore.rules の中身を貼って公開する。手で反映するのは初回だけでよく、以後は CI が `dev` への push のたびに反映する（7 番）
 
-   書き込めるコレクションは `accounts` / `categories` / `transactions` / `budgets` / `settings`（月の開始日）。`settings` は月の開始日の機能で加わったので、それより前にルールを反映したプロジェクトでは、この機能を含むアプリを公開する前にルールを反映し直す。古いルールのままだと月の開始日を送れず、同期がエラーで止まる
+   書き込めるコレクションは `accounts` / `categories` / `transactions` / `budgets` / `settings`（月の開始日）。反映されたルールにないコレクションへの書き込みは拒否され、設定画面に「クラウドのデータを読み書きする権限がありません」と出て同期が止まる
 
 6. GitHub の **Settings → Secrets and variables → Actions → Variables** に `VITE_FIREBASE_API_KEY` / `VITE_FIREBASE_AUTH_DOMAIN` / `VITE_FIREBASE_PROJECT_ID` / `VITE_FIREBASE_APP_ID` を登録する。Web 用の Firebase 設定はページから誰でも見える値なので、Secrets ではなく Variables に置く
+7. CI がルールを反映するためのサービスアカウントを用意する
+   1. [Google Cloud コンソール](https://console.cloud.google.com/) で Firebase と同じプロジェクトを選び、**IAM と管理 → サービス アカウント** でサービスアカウントを作る
+   2. ロールは **Firebase ルール管理者**（`roles/firebaserules.admin`）と **Service Usage ユーザー**（`roles/serviceusage.serviceUsageConsumer`）の 2 つだけを付ける。Firestore のデータは読み書きできない
+   3. そのサービスアカウントの **鍵 → 鍵を追加 → JSON** で鍵を作り、中身を GitHub の **Settings → Secrets and variables → Actions → Secrets** に `FIREBASE_SERVICE_ACCOUNT` として登録する。登録したら手元の鍵ファイルは消す
+
+   Secret が無い・権限が足りないときは、ワークフローの `rules` ジョブが失敗し、アプリも公開されない。ルールで書き込める範囲を狭めるときは、古いアプリが拒否されないよう、先にその書き込みをしないアプリを公開してからルールを変える
 
 ### デプロイ
 
-`dev` ブランチに push すると、GitHub Actions（`.github/workflows/deploy.yml`）が lint・テスト・ビルドを行い、GitHub Pages に公開します。初回だけ、リポジトリの Settings → Pages で Source を「GitHub Actions」にしてください。
+`dev` ブランチに push すると、GitHub Actions（`.github/workflows/deploy.yml`）が lint・テスト・ビルドを行い、[firestore.rules](firestore.rules) を Firebase に反映してから GitHub Pages に公開します。ルールの反映に失敗したときは公開しません。初回だけ、リポジトリの Settings → Pages で Source を「GitHub Actions」にしてください。
 
 ### 構成
 
