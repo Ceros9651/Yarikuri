@@ -1,4 +1,4 @@
-import { computeAdjustmentAmount } from '../domain/balance';
+import { computeAdjustmentAmount, initialBalanceFor } from '../domain/balance';
 import { budgetAlertFor, type BudgetAlert } from '../domain/budget';
 import {
   APP_SETTINGS_ID,
@@ -16,7 +16,7 @@ import {
   type TransactionDraft,
   type TransactionErrors,
 } from '../domain/validation';
-import { MAX_MONTH_START_DAY, monthOf, periodOf, periodRange } from '../domain/date';
+import { MAX_MONTH_START_DAY, monthOf, periodOf, periodRange, todayString } from '../domain/date';
 import { budgetDocId, markDirty } from '../sync/docs';
 import { db as defaultDb, type YarikuriDB } from './db';
 import {
@@ -63,22 +63,39 @@ export async function addAccount(
   });
 }
 
+/**
+ * 口座の名前を変える。currentBalance を渡すと、今日（その日を含む）時点の残高がその額になるよう
+ * 初期残高を逆算して保存する。渡さなければ初期残高は変えない
+ */
 export async function updateAccount(
   id: string,
-  changes: { name: string; initialBalance?: number },
+  changes: { name: string; currentBalance?: number },
   db: YarikuriDB = defaultDb,
 ): Promise<void> {
   assertValid(validateName(changes.name));
-  await db.transaction('rw', db.accounts, db.outbox, async () => {
-    const account = await db.accounts.get(id);
-    if (!account) throw new Error('口座が見つかりません');
-    await db.accounts.update(id, {
-      name: changes.name.trim(),
-      initialBalance:
-        account.type === 'credit' ? 0 : (changes.initialBalance ?? account.initialBalance),
-    });
-    await markDirty(db, 'accounts', [id]);
-  });
+  await db.transaction(
+    'rw',
+    [db.accounts, db.transactions, db.balanceDeltas, db.outbox],
+    async () => {
+      const account = await db.accounts.get(id);
+      if (!account) throw new Error('口座が見つかりません');
+      let initialBalance = account.initialBalance;
+      if (account.type === 'credit') {
+        initialBalance = 0;
+      } else if (changes.currentBalance !== undefined) {
+        const today = todayString();
+        initialBalance = initialBalanceFor(
+          account,
+          await readAccountDeltas(db, id),
+          await readMonthTransactions(db, monthOf(today)),
+          today,
+          changes.currentBalance,
+        );
+      }
+      await db.accounts.update(id, { name: changes.name.trim(), initialBalance });
+      await markDirty(db, 'accounts', [id]);
+    },
+  );
 }
 
 export async function setAccountHidden(
